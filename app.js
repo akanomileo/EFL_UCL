@@ -1,6 +1,12 @@
+
 const $ = (q) => document.querySelector(q);
 const $$ = (q) => Array.from(document.querySelectorAll(q));
-const GROUPS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+const STORAGE = {
+  settings: 'league_settings',
+  teams: 'league_teams',
+  matches: 'league_matches'
+};
 
 function read(k, d) {
   try {
@@ -13,46 +19,41 @@ function read(k, d) {
 
 function save(k, v) {
   localStorage.setItem(k, JSON.stringify(v));
-  if (window.firebaseEFL && window.firebaseEFL.saveKey) {
+  if (window.leagueSync && window.leagueSync.saveKey) {
+    window.leagueSync.saveKey(k, v);
+  } else if (window.firebaseEFL && window.firebaseEFL.saveKey) {
     window.firebaseEFL.saveKey(k, v);
   }
 }
 
 const defaults = {
   settings: {
-    tournamentName: 'Elite Football League',
+    tournamentName: 'EFL League',
     teamLimit: 48,
-    groupCount: 8,
-    qualifyPerGroup: 2,
-    teamsPerGroup: 4,
+    leagueSize: 20,
+    fixtureFormat: 'single',
     resultDeadlineDate: '',
     resultDeadlineTime: '',
     adminPin: ''
   },
-  teams: [
-    { id: 1, name: 'Team A', group: 'A' },
-    { id: 2, name: 'Team B', group: 'A' },
-    { id: 3, name: 'Team C', group: 'A' },
-    { id: 4, name: 'Team D', group: 'A' },
-    { id: 5, name: 'Team E', group: 'B' },
-    { id: 6, name: 'Team F', group: 'B' },
-    { id: 7, name: 'Team G', group: 'B' },
-    { id: 8, name: 'Team H', group: 'B' }
-  ],
-  matches: [
-    { id: 1, round: 'Group Stage', group: 'A', home: 'Team A', away: 'Team B', homeScore: '', awayScore: '', date: '2026-06-10', time: '16:00' },
-    { id: 2, round: 'Group Stage', group: 'A', home: 'Team C', away: 'Team D', homeScore: '', awayScore: '', date: '2026-06-10', time: '18:00' },
-    { id: 3, round: 'Group Stage', group: 'B', home: 'Team E', away: 'Team F', homeScore: '', awayScore: '', date: '2026-06-11', time: '16:00' },
-    { id: 4, round: 'Group Stage', group: 'B', home: 'Team G', away: 'Team H', homeScore: '', awayScore: '', date: '2026-06-11', time: '18:00' }
-  ]
+  teams: [],
+  matches: []
 };
 
 function data() {
   return {
-    settings: { ...defaults.settings, ...read('efl_settings', defaults.settings) },
-    teams: read('efl_teams', defaults.teams),
-    matches: read('efl_matches', defaults.matches)
+    settings: { ...defaults.settings, ...read(STORAGE.settings, defaults.settings) },
+    teams: read(STORAGE.teams, defaults.teams),
+    matches: read(STORAGE.matches, defaults.matches)
   };
+}
+
+window.data = data;
+
+function setData(o) {
+  if (o.settings) save(STORAGE.settings, o.settings);
+  if (o.teams) save(STORAGE.teams, o.teams);
+  if (o.matches) save(STORAGE.matches, o.matches);
 }
 
 function tournamentName(settings) {
@@ -64,9 +65,7 @@ function resultDeadlineDateTime(settings) {
   const s = settings || data().settings;
   const date = String(s.resultDeadlineDate || '').trim();
   const time = String(s.resultDeadlineTime || '').trim();
-
   if (!date || !time) return null;
-
   const dt = new Date(`${date}T${time}`);
   return Number.isNaN(dt.getTime()) ? null : dt;
 }
@@ -84,41 +83,21 @@ function isResultDeadlinePassed(settings) {
 
 function applyResultDeadlineDefaults() {
   const d = data();
-
-  if (!isResultDeadlinePassed(d.settings)) {
-    return 0;
-  }
+  if (!isResultDeadlinePassed(d.settings)) return 0;
 
   let changed = 0;
   d.matches = d.matches.map((m) => {
     const missingHome = m.homeScore === '' || m.homeScore === null || m.homeScore === undefined;
     const missingAway = m.awayScore === '' || m.awayScore === null || m.awayScore === undefined;
-
     if (missingHome && missingAway) {
       changed += 1;
-      return {
-        ...m,
-        homeScore: '0',
-        awayScore: '0',
-        autoDrawApplied: true,
-        autoDrawAppliedAt: new Date().toISOString()
-      };
+      return { ...m, homeScore: '0', awayScore: '0', autoDrawApplied: true, autoDrawAppliedAt: new Date().toISOString() };
     }
-
     return m;
   });
 
-  if (changed > 0) {
-    setData({ matches: d.matches });
-  }
-
+  if (changed > 0) setData({ matches: d.matches });
   return changed;
-}
-
-function setData(o) {
-  if (o.settings) save('efl_settings', o.settings);
-  if (o.teams) save('efl_teams', o.teams);
-  if (o.matches) save('efl_matches', o.matches);
 }
 
 function rerenderCurrentPage() {
@@ -128,9 +107,10 @@ function rerenderCurrentPage() {
   else if (p === 'results.html') renderResults();
   else if (p === 'standings.html') renderStandings();
   else if (p === 'teams.html') renderTeams();
-  else if (p === 'bracket.html') renderBracket();
   else if (p === 'admin.html') renderAdmin();
 }
+
+window.rerenderCurrentPage = rerenderCurrentPage;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -143,7 +123,7 @@ function escapeHtml(value) {
 
 function layout(active) {
   const name = escapeHtml(tournamentName());
-  return `<header class="top"><div class="wrap nav"><a class="brand" href="index.html"><img src="logo.png"><span>${name}</span></a><nav class="links"><a class="${active === 'home' ? 'active' : ''}" href="index.html">Home</a><a class="${active === 'fixtures' ? 'active' : ''}" href="fixtures.html">Fixtures</a><a class="${active === 'results' ? 'active' : ''}" href="results.html">Results</a><a class="${active === 'standings' ? 'active' : ''}" href="standings.html">Standings</a><a class="${active === 'bracket' ? 'active' : ''}" href="bracket.html">Bracket</a><a class="${active === 'teams' ? 'active' : ''}" href="teams.html">Teams</a><a class="admin-dot" title="Admin" href="admin.html">⚙</a></nav></div></header>`;
+  return `<header class="top"><div class="wrap nav"><a class="brand" href="index.html"><img src="logo.png"><span>${name}</span></a><nav class="links"><a class="${active === 'home' ? 'active' : ''}" href="index.html">Home</a><a class="${active === 'fixtures' ? 'active' : ''}" href="fixtures.html">Fixtures</a><a class="${active === 'results' ? 'active' : ''}" href="results.html">Results</a><a class="${active === 'standings' ? 'active' : ''}" href="standings.html">Standings</a><a class="${active === 'teams' ? 'active' : ''}" href="teams.html">Teams</a><a class="admin-dot" title="Admin" href="admin.html">⚙</a></nav></div></header>`;
 }
 
 function init(active) {
@@ -152,52 +132,6 @@ function init(active) {
   document.querySelectorAll('.top,.footer').forEach((el) => el.remove());
   document.body.insertAdjacentHTML('afterbegin', layout(active));
   document.body.insertAdjacentHTML('beforeend', `<footer class="footer"><div class="wrap">© ${new Date().getFullYear()} ${name}</div></footer>`);
-}
-
-function standings() {
-  const { teams, matches } = data();
-  const map = {};
-  teams.forEach((t) => {
-    map[t.name] = { team: t.name, group: t.group, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
-  });
-
-  matches
-    .filter((m) => m.round === 'Group Stage' && m.homeScore !== '' && m.awayScore !== '')
-    .forEach((m) => {
-      const h = map[m.home];
-      const a = map[m.away];
-      if (!h || !a) return;
-
-      const hs = Number(m.homeScore);
-      const as = Number(m.awayScore);
-      if (!Number.isFinite(hs) || !Number.isFinite(as)) return;
-
-      h.P++;
-      a.P++;
-      h.GF += hs;
-      h.GA += as;
-      a.GF += as;
-      a.GA += hs;
-      h.GD = h.GF - h.GA;
-      a.GD = a.GF - a.GA;
-
-      if (hs > as) {
-        h.W++;
-        a.L++;
-        h.Pts += 3;
-      } else if (hs < as) {
-        a.W++;
-        h.L++;
-        a.Pts += 3;
-      } else {
-        h.D++;
-        a.D++;
-        h.Pts++;
-        a.Pts++;
-      }
-    });
-
-  return Object.values(map).sort((a, b) => a.group.localeCompare(b.group) || b.Pts - a.Pts || b.GD - a.GD || b.GF - a.GF);
 }
 
 function fixtureScheduleText(m) {
@@ -212,31 +146,85 @@ function matchCard(m, editable = false) {
   const isPending = m.homeScore === '' || m.awayScore === '';
   const score = isPending ? 'vs' : `${m.homeScore} - ${m.awayScore}`;
   const scoreClass = isPending ? 'score vs-pill' : 'score score-result';
-
   return `<div class="match fixture-match"><div class="team-name team-home">${escapeHtml(m.home)}</div><div class="match-center"><div class="${scoreClass}">${escapeHtml(score)}</div><div class="match-date">${escapeHtml(fixtureScheduleText(m))}</div></div><div class="team-name team-away">${escapeHtml(m.away)}</div>${editable ? `<div class="match-edit"><button class="btn" onclick="editResult(${m.id})">Edit</button></div>` : ''}</div>`;
+}
+
+function standings() {
+  const { teams, matches } = data();
+  const map = {};
+  teams.forEach((t) => {
+    map[t.name] = { team: t.name, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
+  });
+
+  matches
+    .filter((m) => m.homeScore !== '' && m.awayScore !== '')
+    .forEach((m) => {
+      const h = map[m.home];
+      const a = map[m.away];
+      if (!h || !a) return;
+
+      const hs = Number(m.homeScore);
+      const as = Number(m.awayScore);
+      if (!Number.isFinite(hs) || !Number.isFinite(as)) return;
+
+      h.P += 1;
+      a.P += 1;
+      h.GF += hs;
+      h.GA += as;
+      a.GF += as;
+      a.GA += hs;
+      h.GD = h.GF - h.GA;
+      a.GD = a.GF - a.GA;
+
+      if (hs > as) {
+        h.W += 1;
+        a.L += 1;
+        h.Pts += 3;
+      } else if (hs < as) {
+        a.W += 1;
+        h.L += 1;
+        a.Pts += 3;
+      } else {
+        h.D += 1;
+        a.D += 1;
+        h.Pts += 1;
+        a.Pts += 1;
+      }
+    });
+
+  return Object.values(map).sort((a, b) => b.Pts - a.Pts || b.GD - a.GD || b.GF - a.GF || a.team.localeCompare(b.team));
+}
+
+function groupByRound(matches) {
+  const rounds = [...new Set(matches.map((m) => m.round || 'Matchweek'))]
+    .sort((a, b) => {
+      const na = Number(String(a).match(/\d+/)?.[0] || 0);
+      const nb = Number(String(b).match(/\d+/)?.[0] || 0);
+      return na - nb;
+    });
+
+  return rounds.map((round) => ({
+    round,
+    matches: matches.filter((m) => (m.round || 'Matchweek') === round)
+  }));
 }
 
 function renderHome() {
   applyResultDeadlineDefaults();
   init('home');
   const { teams, matches, settings } = data();
+  const pending = matches.filter((m) => m.homeScore === '' || m.awayScore === '').slice(0, 4);
+  const completed = matches.filter((m) => m.homeScore !== '' && m.awayScore !== '').slice(0, 4);
   const name = escapeHtml(tournamentName(settings));
-  $('#app').innerHTML = `<section class="hero"><div class="wrap hero-grid"><div class="panel"><h1>${name}</h1><p>Fixtures, results, group standings and knockout bracket in one clean football website.</p><a class="btn" href="fixtures.html">View Fixtures</a> <a class="btn alt" href="standings.html">View Standings</a><div class="stats"><div class="stat"><b>${teams.length}</b><br><span>Teams</span></div><div class="stat"><b>${settings.groupCount}</b><br><span>Groups</span></div><div class="stat"><b>${settings.qualifyPerGroup}</b><br><span>Qualify / Group</span></div></div></div><div class="panel"><h2>Upcoming Fixtures</h2>${matches.slice(0, 4).map((m) => matchCard(m)).join('')}</div></div></section><section class="section"><div class="wrap"><div class="title"><h2>Latest Results</h2><a href="results.html">View all</a></div><div class="card">${matches.filter((m) => m.homeScore !== '' && m.awayScore !== '').slice(0, 5).map((m) => matchCard(m)).join('') || '<p class="small">No results yet.</p>'}</div></div></section>`;
+
+  $('#app').innerHTML = `<section class="hero"><div class="wrap hero-grid"><div class="panel"><h1>${name}</h1><a class="btn" href="fixtures.html">View Fixtures</a> <a class="btn alt" href="standings.html">View League Table</a><div class="stats"><div class="stat"><b>${teams.length}</b><br><span>Teams</span></div><div class="stat"><b>${settings.leagueSize}</b><br><span>League Size</span></div><div class="stat"><b>${matches.length}</b><br><span>Fixtures</span></div></div></div><div class="panel"><h2>Upcoming Fixtures</h2>${pending.map((m) => matchCard(m)).join('') || '<p class="small">No upcoming fixtures yet.</p>'}</div></div></section><section class="section"><div class="wrap"><div class="title"><h2>Latest Results</h2><a href="results.html">View all</a></div><div class="card">${completed.map((m) => matchCard(m)).join('') || '<p class="small">No results yet.</p>'}</div></div></section>`;
 }
 
 function renderFixtures() {
   applyResultDeadlineDefaults();
   init('fixtures');
   const ms = data().matches.filter((m) => m.homeScore === '' || m.awayScore === '');
-  const groups = [...new Set(ms.map((m) => m.group || m.round || 'Other'))]
-    .sort((a, b) => GROUPS.indexOf(a) - GROUPS.indexOf(b));
-
-  const groupedHtml = groups.map((g) => {
-    const groupMatches = ms.filter((m) => (m.group || m.round || 'Other') === g);
-    const title = GROUPS.includes(g) ? `Group ${escapeHtml(g)}` : escapeHtml(g);
-    return `<h3 class="group-title">${title}</h3><div class="card">${groupMatches.map((m) => matchCard(m)).join('')}</div>`;
-  }).join('');
-
+  const groupedHtml = groupByRound(ms).map(({ round, matches }) => `<h3 class="round-title">${escapeHtml(round)}</h3><div class="card">${matches.map((m) => matchCard(m)).join('')}</div>`).join('');
   $('#app').innerHTML = `<section class="section"><div class="wrap"><div class="title"><h2>Fixtures</h2></div>${groupedHtml || '<div class="card">No upcoming fixtures.</div>'}</div></section>`;
 }
 
@@ -248,56 +236,27 @@ function renderResults() {
   const deadlineStatus = isResultDeadlinePassed(d.settings)
     ? `Result deadline passed: ${escapeHtml(resultDeadlineText(d.settings))}. Blank results are auto-recorded as 0-0 draws.`
     : `Result deadline: ${escapeHtml(resultDeadlineText(d.settings))}`;
-
-  const groups = [...new Set(ms.map((m) => m.group || m.round || 'Other'))]
-    .sort((a, b) => GROUPS.indexOf(a) - GROUPS.indexOf(b));
-
-  const groupedHtml = groups.map((g) => {
-    const groupMatches = ms.filter((m) => (m.group || m.round || 'Other') === g);
-    const title = GROUPS.includes(g) ? `Group ${escapeHtml(g)}` : escapeHtml(g);
-    return `<h3 class="group-title">${title}</h3><div class="card">${groupMatches.map((m) => matchCard(m)).join('')}</div>`;
-  }).join('');
-
+  const groupedHtml = groupByRound(ms).map(({ round, matches }) => `<h3 class="round-title">${escapeHtml(round)}</h3><div class="card">${matches.map((m) => matchCard(m)).join('')}</div>`).join('');
   $('#app').innerHTML = `<section class="section"><div class="wrap"><div class="title"><h2>Results</h2></div><p class="small">${deadlineStatus}</p>${groupedHtml || '<div class="card">No results yet.</div>'}</div></section>`;
 }
 
 function renderTeams() {
   init('teams');
-  const { teams } = data();
-  const groups = [...new Set(teams.map((t) => t.group))].sort();
-  $('#app').innerHTML = `<section class="section"><div class="wrap"><h2>Teams</h2>${groups.map((g) => `<h3 class="group-title">Group ${escapeHtml(g)}</h3><div class="grid">${teams.filter((t) => t.group === g).map((t) => `<div class="card"><h3>${escapeHtml(t.name)}</h3><span class="tag">Group ${escapeHtml(t.group)}</span></div>`).join('')}</div>`).join('') || '<p>No teams yet.</p>'}</div></section>`;
+  const { teams, settings } = data();
+  $('#app').innerHTML = `<section class="section"><div class="wrap"><div class="title"><h2>Teams</h2><span class="tag">${teams.length}/${settings.leagueSize} teams</span></div><div class="grid">${teams.map((t, i) => `<div class="card"><h3>${escapeHtml(t.name)}</h3><span class="tag">#${i + 1}</span></div>`).join('') || '<p>No teams yet.</p>'}</div></div></section>`;
 }
 
 function renderStandings() {
   applyResultDeadlineDefaults();
   init('standings');
   const rows = standings();
-  const groups = [...new Set(rows.map((r) => r.group))];
-  $('#app').innerHTML = `<section class="section"><div class="wrap"><h2>Group Standings</h2>${groups.map((g) => `<h3 class="group-title">Group ${escapeHtml(g)}</h3><table class="table standings-table"><tr><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th></tr>${rows.filter((r) => r.group === g).map((r) => `<tr><td><b>${escapeHtml(r.team)}</b></td><td>${r.P}</td><td>${r.W}</td><td>${r.D}</td><td>${r.L}</td><td>${r.GF}</td><td>${r.GA}</td><td>${r.GD}</td><td><b>${r.Pts}</b></td></tr>`).join('')}</table>`).join('') || '<p>No standings yet.</p>'}</div></section>`;
-}
-
-function qualified() {
-  const { settings } = data();
-  const rows = standings();
-  const out = [];
-  GROUPS.slice(0, settings.groupCount).forEach((g) => {
-    out.push(...rows.filter((r) => r.group === g).slice(0, settings.qualifyPerGroup).map((r) => r.team));
-  });
-  return out;
-}
-
-function renderBracket() {
-  applyResultDeadlineDefaults();
-  init('bracket');
-  const q = qualified();
-  const rounds = ['Qualified Teams', 'Round of 16', 'Quarter Finals', 'Semi Finals', 'Final'];
-  $('#app').innerHTML = `<section class="section"><div class="wrap"><h2>Knockout Bracket</h2><p class="small">Bracket updates from group standings based on admin qualification settings.</p><div class="bracket">${rounds.map((r, i) => `<div class="round"><h3>${r}</h3>${i === 0 ? (q.map((t) => `<div class="slot">${escapeHtml(t)}</div>`).join('') || '<div class="slot">No qualified teams yet</div>') : '<div class="slot">To be generated</div><div class="slot">To be generated</div>'}</div>`).join('')}</div></div></section>`;
+  $('#app').innerHTML = `<section class="section"><div class="wrap"><h2>League Table</h2><div class="table-scroll"><table class="table standings-table"><tr><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th></tr>${rows.map((r) => `<tr><td><b>${escapeHtml(r.team)}</b></td><td>${r.P}</td><td>${r.W}</td><td>${r.D}</td><td>${r.L}</td><td>${r.GF}</td><td>${r.GA}</td><td>${r.GD}</td><td><b>${r.Pts}</b></td></tr>`).join('')}</table></div>${rows.length ? '' : '<p>No standings yet.</p>'}</div></section>`;
 }
 
 function renderAdmin() {
   applyResultDeadlineDefaults();
   init('');
-  const logged = sessionStorage.getItem('efl_admin') === 'yes';
+  const logged = sessionStorage.getItem('league_admin') === 'yes';
   $('#app').innerHTML = logged ? adminDash() : loginBox();
   bindAdmin();
 }
@@ -305,14 +264,13 @@ function renderAdmin() {
 function loginBox() {
   const settings = data().settings;
   if (!settings.adminPin) {
-    return `<section class="section"><div class="wrap"><div class="panel" style="max-width:420px;margin:auto"><h2>Create Admin PIN</h2><p class="small">No default PIN is shown or used. Create your private admin PIN before managing the tournament.</p><div class="form"><input id="newPin" type="password" placeholder="New admin PIN"><input id="confirmPin" type="password" placeholder="Confirm admin PIN"><button class="btn" id="createPinBtn">Create PIN</button></div></div></div></section>`;
+    return `<section class="section"><div class="wrap"><div class="panel" style="max-width:420px;margin:auto"><h2>Create Admin PIN</h2><p class="small">No default PIN is shown or used. Create your private admin PIN before managing the league.</p><div class="form"><input id="newPin" type="password" placeholder="New admin PIN"><input id="confirmPin" type="password" placeholder="Confirm admin PIN"><button class="btn" id="createPinBtn">Create PIN</button></div></div></div></section>`;
   }
-
   return `<section class="section"><div class="wrap"><div class="panel" style="max-width:420px;margin:auto"><h2>Admin Login</h2><div class="form"><input id="pin" type="password" placeholder="Admin PIN"><button class="btn" id="loginBtn">Login</button></div></div></div></section>`;
 }
 
 function adminDash() {
-  return `<section class="section"><div class="wrap admin-layout"><div class="side panel"><button data-tab="settings" class="active">Tournament Settings</button><button data-tab="teams">Bulk Teams + Groups</button><button data-tab="fixtures">Fixtures</button><button data-tab="results">Fast Result Entry</button><button onclick="sessionStorage.removeItem('efl_admin');location.reload()">Logout</button></div><div class="panel"><div id="adminContent"></div></div></div></section>`;
+  return `<section class="section"><div class="wrap admin-layout"><div class="side panel"><button data-tab="settings" class="active">League Settings</button><button data-tab="teams">Bulk Teams</button><button data-tab="fixtures">Fixtures + Schedule</button><button data-tab="results">Fast Result Entry</button><button onclick="sessionStorage.removeItem('league_admin');location.reload()">Logout</button></div><div class="panel"><div id="adminContent"></div></div></div></section>`;
 }
 
 function bindAdmin() {
@@ -321,14 +279,12 @@ function bindAdmin() {
     createPinBtn.onclick = () => {
       const newPin = ($('#newPin')?.value || '').trim();
       const confirmPin = ($('#confirmPin')?.value || '').trim();
-
       if (newPin.length < 4) return alert('PIN must be at least 4 characters.');
       if (newPin !== confirmPin) return alert('PINs do not match.');
-
       const s = data().settings;
       s.adminPin = newPin;
       setData({ settings: s });
-      sessionStorage.setItem('efl_admin', 'yes');
+      sessionStorage.setItem('league_admin', 'yes');
       location.reload();
     };
   }
@@ -337,7 +293,7 @@ function bindAdmin() {
   if (lb) {
     lb.onclick = () => {
       if ($('#pin').value === data().settings.adminPin) {
-        sessionStorage.setItem('efl_admin', 'yes');
+        sessionStorage.setItem('league_admin', 'yes');
         location.reload();
       } else {
         alert('Wrong PIN');
@@ -362,38 +318,25 @@ function adminMessage(text, type = 'ok') {
   if (box) box.innerHTML = `<div class="notice ${type}">${escapeHtml(text)}</div>`;
 }
 
-function groupOptions(selected, groupCount) {
-  return GROUPS.slice(0, groupCount).map((g) => `<option ${selected === g ? 'selected' : ''}>${g}</option>`).join('');
-}
-
 function showAdminTab(tab) {
   const { settings, teams, matches } = data();
   const c = $('#adminContent');
 
   if (tab === 'settings') {
-    c.innerHTML = `<h2>Tournament Settings</h2><div id="adminMessage"></div><div class="form"><label>Tournament name <input id="tournamentName" value="${escapeHtml(tournamentName(settings))}" placeholder="Example: Elite Football League"></label><label>Number of groups <input id="groupCount" type="number" min="1" max="12" value="${settings.groupCount}"></label><label>Teams per group <input id="teamsPerGroup" type="number" min="2" max="8" value="${settings.teamsPerGroup}"></label><label>Teams qualify per group <input id="qualifyPerGroup" type="number" min="1" max="8" value="${settings.qualifyPerGroup}"></label><label>Admin PIN <input id="adminPin" type="password" value="${escapeHtml(settings.adminPin)}" placeholder="Set admin PIN"></label><button class="btn" onclick="saveSettings()">Save Settings</button></div>`;
+    c.innerHTML = `<h2>League Settings</h2><div id="adminMessage"></div><div class="form"><label>League name <input id="tournamentName" value="${escapeHtml(tournamentName(settings))}" placeholder="Example: EFL League"></label><label>League size <input id="leagueSize" type="number" min="2" max="48" value="${settings.leagueSize}"></label><label>Fixture format <select id="fixtureFormat"><option value="single" ${settings.fixtureFormat === 'single' ? 'selected' : ''}>Single round-robin</option><option value="double" ${settings.fixtureFormat === 'double' ? 'selected' : ''}>Home & away</option></select></label><label>Admin PIN <input id="adminPin" type="password" value="${escapeHtml(settings.adminPin)}" placeholder="Set admin PIN"></label><button class="btn" onclick="saveSettings()">Save Settings</button></div><p class="small">Default league size is 20 teams. Maximum is 48 teams.</p>`;
   }
 
   if (tab === 'teams') {
-    const groupedSummary = GROUPS.slice(0, settings.groupCount)
-      .map((g) => `${g}: ${teams.filter((t) => t.group === g).length}`)
-      .join(' • ');
-
-    c.innerHTML = `<h2>Bulk Teams + Auto Group Shuffle</h2><div id="adminMessage"></div><div class="admin-tools"><div class="tool-card"><h3>Paste teams at once</h3><p class="small">Paste one team per line. Commas also work. The system will shuffle and assign teams evenly into groups.</p><textarea id="bulkTeams" rows="10" placeholder="Example:\nFalcon FC\nRoyal Lions\nGolden Tigers\nUnited Stars"></textarea><div class="check-row"><label><input id="replaceTeams" type="checkbox" checked> Replace current teams</label><label><input id="autoFixtures" type="checkbox" checked> Generate group fixtures after grouping</label></div><button class="btn" onclick="bulkCreateTeams()">Create Groups Automatically</button><button class="btn alt" onclick="shuffleExistingTeams()">Shuffle Existing Teams</button></div><div class="tool-card"><h3>Single team add</h3><div class="form compact"><input id="teamName" placeholder="Team name"><select id="teamGroup">${groupOptions('A', settings.groupCount)}</select><button class="btn" onclick="addTeam()">Add Team</button></div><hr><p class="small"><b>Current:</b> ${teams.length}/${settings.teamLimit} teams</p><p class="small"><b>Groups:</b> ${escapeHtml(groupedSummary || 'No teams yet')}</p><button class="btn danger" onclick="clearTeamsAndMatches()">Clear Teams + Fixtures</button></div></div><br><h3>Team List</h3><div class="table-scroll"><table class="table"><tr><th>Team</th><th>Group</th><th>Action</th></tr>${teams.map((t) => `<tr><td><input value="${escapeHtml(t.name)}" onchange="updateTeam(${t.id},'name',this.value)"></td><td><select onchange="updateTeam(${t.id},'group',this.value)">${groupOptions(t.group, settings.groupCount)}</select></td><td><button onclick="deleteTeam(${t.id})">Delete</button></td></tr>`).join('') || '<tr><td colspan="3">No teams yet.</td></tr>'}</table></div>`;
+    c.innerHTML = `<h2>Bulk Teams</h2><div id="adminMessage"></div><div class="admin-tools"><div class="tool-card"><h3>Paste teams at once</h3><p class="small">Paste one team per line. Commas also work. Maximum ${settings.teamLimit} teams.</p><textarea id="bulkTeams" rows="12" placeholder="Team 1\nTeam 2\nTeam 3\nTeam 4"></textarea><div class="check-row"><label><input id="replaceTeams" type="checkbox" checked> Replace current teams</label><label><input id="shuffleTeams" type="checkbox" checked> Shuffle before fixture generation</label><label><input id="autoFixtures" type="checkbox" checked> Generate league fixtures after saving teams</label></div><button class="btn" onclick="bulkCreateTeams()">Save Teams</button></div><div class="tool-card"><h3>Single team add</h3><div class="form compact"><input id="teamName" placeholder="Team name"><button class="btn" onclick="addTeam()">Add Team</button></div><hr><p class="small"><b>Current:</b> ${teams.length}/${settings.leagueSize} teams</p><p class="small"><b>Maximum:</b> ${settings.teamLimit} teams</p><button class="btn danger" onclick="clearTeamsAndMatches()">Clear Teams + Fixtures</button></div></div><br><h3>Team List</h3><div class="table-scroll"><table class="table"><tr><th>#</th><th>Team</th><th>Action</th></tr>${teams.map((t, i) => `<tr><td>${i + 1}</td><td><input value="${escapeHtml(t.name)}" onchange="updateTeam(${t.id}, this.value)"></td><td><button onclick="deleteTeam(${t.id})">Delete</button></td></tr>`).join('') || '<tr><td colspan="3">No teams yet.</td></tr>'}</table></div>`;
   }
 
   if (tab === 'fixtures') {
-    const fixtureGroups = [...new Set(matches.map((m) => m.group || m.round || 'Other'))]
-      .sort((a, b) => GROUPS.indexOf(a) - GROUPS.indexOf(b));
-
-    const fixtureTables = fixtureGroups.map((g) => {
-      const title = GROUPS.includes(g) ? `Group ${escapeHtml(g)}` : escapeHtml(g);
-      const rows = matches.filter((m) => (m.group || m.round || 'Other') === g).map((m) => `<tr><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input id="date_${m.id}" type="date" value="${escapeHtml((m.date && m.date !== 'TBA') ? m.date : '')}"></td><td><input id="time_${m.id}" type="time" value="${escapeHtml((m.time && m.time !== 'TBA') ? m.time : '')}"></td></tr>`).join('');
-
-      return `<h3 class="group-title">${title}</h3><div class="table-scroll"><table class="table"><tr><th>Match</th><th>Date</th><th>Time</th></tr>${rows}</table></div>`;
+    const roundTables = groupByRound(matches).map(({ round, matches }) => {
+      const rows = matches.map((m) => `<tr><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input id="date_${m.id}" type="date" value="${escapeHtml((m.date && m.date !== 'TBA') ? m.date : '')}"></td><td><input id="time_${m.id}" type="time" value="${escapeHtml((m.time && m.time !== 'TBA') ? m.time : '')}"></td></tr>`).join('');
+      return `<h3 class="round-title">${escapeHtml(round)}</h3><div class="table-scroll"><table class="table"><tr><th>Match</th><th>Date</th><th>Time</th></tr>${rows}</table></div>`;
     }).join('');
 
-    c.innerHTML = `<h2>Fixtures + Optional Schedule</h2><div id="adminMessage"></div><div class="admin-actions"><button class="btn" onclick="generateFixtures()">Generate Group Fixtures</button><button class="btn alt" onclick="clearFixtureSchedule()">Clear Date/Time Only</button><button class="btn danger" onclick="clearFixtures()">Clear Fixtures</button></div><p class="small">Date and time are optional. Leave them blank if the fixture schedule is not confirmed yet.</p><div class="tool-card"><h3>Quick schedule apply</h3><p class="small">Optional shortcut: apply the same date/time to all fixtures, then adjust individual matches below.</p><div class="form compact"><input id="bulkFixtureDate" type="date"><input id="bulkFixtureTime" type="time"><button class="btn" onclick="applyBulkFixtureSchedule()">Apply to All Fixtures</button></div></div><br>${fixtureTables || '<div class="card">No fixtures yet. Generate fixtures first.</div>'}<div class="admin-actions"><button class="btn" onclick="saveFixtureSchedule()">Save Fixture Date/Time</button></div>`;
+    c.innerHTML = `<h2>Fixtures + Optional Schedule</h2><div id="adminMessage"></div><div class="admin-actions"><button class="btn" onclick="generateFixtures()">Generate League Fixtures</button><button class="btn alt" onclick="clearFixtureSchedule()">Clear Date/Time Only</button><button class="btn danger" onclick="clearFixtures()">Clear Fixtures</button></div><p class="small">Date and time are optional. Leave them blank if the schedule is not confirmed.</p><div class="tool-card"><h3>Quick schedule apply</h3><p class="small">Apply the same date/time to all fixtures, then adjust individual matches below.</p><div class="form compact"><input id="bulkFixtureDate" type="date"><input id="bulkFixtureTime" type="time"><button class="btn" onclick="applyBulkFixtureSchedule()">Apply to All Fixtures</button></div></div><br>${roundTables || '<div class="card">No fixtures yet. Generate fixtures first.</div>'}<div class="admin-actions"><button class="btn" onclick="saveFixtureSchedule()">Save Fixture Date/Time</button></div>`;
   }
 
   if (tab === 'results') {
@@ -402,7 +345,7 @@ function showAdminTab(tab) {
       ? `Deadline passed: ${escapeHtml(resultDeadlineText(settings))}. Blank results will become 0-0.`
       : `Deadline: ${escapeHtml(resultDeadlineText(settings))}`;
 
-    c.innerHTML = `<h2>Fast Result Entry</h2><div id="adminMessage"></div><div class="tool-card"><h3>Result filling deadline</h3><p class="small">Optional. After this date and time, any match without a result will automatically become a 0-0 draw. Admin can still edit the result later.</p><div class="form compact"><input id="resultDeadlineDate" type="date" value="${escapeHtml(settings.resultDeadlineDate || '')}"><input id="resultDeadlineTime" type="time" value="${escapeHtml(settings.resultDeadlineTime || '')}"><button class="btn" onclick="saveResultDeadline()">Save Deadline</button><button class="btn alt" onclick="applyDeadlineDrawsNow()">Apply 0-0 Now</button></div><p class="small">${deadlineStatus}</p></div><br><p class="small">Enter all scores on one screen, then click Save All Results. Leave both score boxes blank if the match has not been played yet.</p><div class="table-scroll"><table class="table result-table"><tr><th>Group/Round</th><th>Match</th><th>Home</th><th>Away</th><th>Status</th></tr>${matches.map((m) => `<tr><td>${escapeHtml(m.group || m.round)}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input class="score-input" id="hs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(m.homeScore)}"></td><td><input class="score-input" id="as_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(m.awayScore)}"></td><td>${m.autoDrawApplied ? '<span class="tag">Auto 0-0</span>' : '<span class="small">Manual / pending</span>'}</td></tr>`).join('') || '<tr><td colspan="5">No matches yet. Generate fixtures first.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveAllResults()">Save All Results</button><button class="btn alt" onclick="clearAllScores()">Clear All Scores</button></div>`;
+    c.innerHTML = `<h2>Fast Result Entry</h2><div id="adminMessage"></div><div class="tool-card"><h3>Result filling deadline</h3><p class="small">Optional. After this date and time, any match without a result automatically becomes a 0-0 draw. Admin can still edit later.</p><div class="form compact"><input id="resultDeadlineDate" type="date" value="${escapeHtml(settings.resultDeadlineDate || '')}"><input id="resultDeadlineTime" type="time" value="${escapeHtml(settings.resultDeadlineTime || '')}"><button class="btn" onclick="saveResultDeadline()">Save Deadline</button><button class="btn alt" onclick="applyDeadlineDrawsNow()">Apply 0-0 Now</button></div><p class="small">${deadlineStatus}</p></div><br><p class="small">Enter all scores on one screen, then click Save All Results.</p><div class="table-scroll"><table class="table result-table"><tr><th>Round</th><th>Match</th><th>Home</th><th>Away</th><th>Status</th></tr>${matches.map((m) => `<tr><td>${escapeHtml(m.round)}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input class="score-input" id="hs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(m.homeScore)}"></td><td><input class="score-input" id="as_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(m.awayScore)}"></td><td>${m.autoDrawApplied ? '<span class="tag">Auto 0-0</span>' : '<span class="small">Manual / pending</span>'}</td></tr>`).join('') || '<tr><td colspan="5">No matches yet. Generate fixtures first.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveAllResults()">Save All Results</button><button class="btn alt" onclick="clearAllScores()">Clear All Scores</button></div>`;
   }
 }
 
@@ -411,7 +354,6 @@ function parseTeamNames(raw) {
     .split(/\n|,|;/)
     .map((name) => name.trim())
     .filter(Boolean);
-
   const seen = new Set();
   return names.filter((name) => {
     const key = name.toLowerCase();
@@ -430,31 +372,25 @@ function shuffleArray(input) {
   return arr;
 }
 
-function createGroupedTeamsFromNames(names, settings, preserveIds = false, existingTeams = []) {
-  const shuffled = shuffleArray(names);
+function createTeamsFromNames(names, preserveIds = false, existingTeams = []) {
   const currentByName = new Map(existingTeams.map((t) => [t.name.toLowerCase(), t.id]));
-  const groupCount = Math.max(1, Math.min(settings.groupCount, GROUPS.length));
-
-  return shuffled.map((name, index) => ({
+  return names.map((name, index) => ({
     id: preserveIds && currentByName.has(name.toLowerCase()) ? currentByName.get(name.toLowerCase()) : Date.now() + index,
-    name,
-    group: GROUPS[index % groupCount]
+    name
   }));
 }
 
 window.saveSettings = () => {
   const s = data().settings;
   s.tournamentName = ($('#tournamentName')?.value || '').trim() || defaults.settings.tournamentName;
-  s.groupCount = Math.max(1, Math.min(12, Number($('#groupCount').value) || 1));
-  s.teamsPerGroup = Math.max(2, Math.min(8, Number($('#teamsPerGroup').value) || 4));
-  s.qualifyPerGroup = Math.max(1, Math.min(8, Number($('#qualifyPerGroup').value) || 2));
+  s.leagueSize = Math.max(2, Math.min(48, Number($('#leagueSize').value) || 20));
+  s.teamLimit = 48;
+  s.fixtureFormat = $('#fixtureFormat')?.value || 'single';
   const newAdminPin = ($('#adminPin')?.value || '').trim();
-  if (newAdminPin.length < 4) {
-    return adminMessage('Admin PIN must be at least 4 characters. No default PIN is used.', 'bad');
-  }
+  if (newAdminPin.length < 4) return adminMessage('Admin PIN must be at least 4 characters.', 'bad');
   s.adminPin = newAdminPin;
   setData({ settings: s });
-  adminMessage('Settings saved. Your admin PIN is private and no default PIN is displayed.', 'ok');
+  adminMessage('League settings saved.', 'ok');
 };
 
 window.addTeam = () => {
@@ -463,21 +399,29 @@ window.addTeam = () => {
   const name = $('#teamName').value.trim();
   if (!name) return;
   if (d.teams.some((t) => t.name.toLowerCase() === name.toLowerCase())) return alert('This team already exists.');
-  d.teams.push({ id: Date.now(), name, group: $('#teamGroup').value });
+  d.teams.push({ id: Date.now(), name });
   setData({ teams: d.teams });
   showAdminTab('teams');
 };
 
-window.updateTeam = (id, k, v) => {
+window.updateTeam = (id, value) => {
   const d = data();
-  d.teams = d.teams.map((t) => (t.id === id ? { ...t, [k]: v } : t));
-  setData({ teams: d.teams });
+  const name = String(value || '').trim();
+  if (!name) return;
+  d.teams = d.teams.map((t) => (t.id === id ? { ...t, name } : t));
+  d.matches = d.matches.map((m) => ({
+    ...m,
+    home: m.home === d.teams.find((t) => t.id === id)?.name ? name : m.home,
+    away: m.away === d.teams.find((t) => t.id === id)?.name ? name : m.away
+  }));
+  setData({ teams: d.teams, matches: d.matches });
 };
 
 window.deleteTeam = (id) => {
   const d = data();
+  const team = d.teams.find((t) => t.id === id);
   d.teams = d.teams.filter((t) => t.id !== id);
-  d.matches = d.matches.filter((m) => d.teams.some((t) => t.name === m.home) && d.teams.some((t) => t.name === m.away));
+  d.matches = d.matches.filter((m) => m.home !== team?.name && m.away !== team?.name);
   setData({ teams: d.teams, matches: d.matches });
   showAdminTab('teams');
 };
@@ -487,82 +431,109 @@ window.bulkCreateTeams = () => {
   const pasted = parseTeamNames($('#bulkTeams').value);
   const replace = $('#replaceTeams').checked;
   const autoFixtures = $('#autoFixtures').checked;
+  const shuffle = $('#shuffleTeams').checked;
 
   if (pasted.length === 0) return adminMessage('Paste team names first.', 'bad');
-  if (pasted.length > d.settings.teamLimit) return adminMessage(`You pasted ${pasted.length} teams. Maximum is ${d.settings.teamLimit}.`, 'bad');
-
-  const capacity = d.settings.groupCount * d.settings.teamsPerGroup;
-  if (pasted.length > capacity) {
-    return adminMessage(`You pasted ${pasted.length} teams, but your current capacity is ${capacity}. Increase groups or teams per group in settings first.`, 'bad');
-  }
-
   const names = replace ? pasted : parseTeamNames([...d.teams.map((t) => t.name), ...pasted].join('\n'));
-  const teams = createGroupedTeamsFromNames(names, d.settings, false, d.teams);
+  if (names.length > d.settings.teamLimit) return adminMessage(`You have ${names.length} teams. Maximum is ${d.settings.teamLimit}.`, 'bad');
+
+  const finalNames = shuffle ? shuffleArray(names) : names;
+  const teams = createTeamsFromNames(finalNames, false, d.teams);
   const newData = { teams };
 
-  if (autoFixtures) {
-    newData.matches = buildGroupFixtures(teams, d.settings);
-  } else if (replace) {
-    newData.matches = [];
-  }
+  if (autoFixtures) newData.matches = buildLeagueFixtures(teams, d.settings);
+  else if (replace) newData.matches = [];
 
   setData(newData);
   showAdminTab('teams');
-  adminMessage(`${teams.length} teams created and shuffled into ${d.settings.groupCount} groups.`, 'ok');
-};
-
-window.shuffleExistingTeams = () => {
-  const d = data();
-  if (d.teams.length < 2) return adminMessage('Add at least 2 teams before shuffling.', 'bad');
-
-  const capacity = d.settings.groupCount * d.settings.teamsPerGroup;
-  if (d.teams.length > capacity) {
-    return adminMessage(`You have ${d.teams.length} teams, but capacity is ${capacity}. Increase groups or teams per group in settings first.`, 'bad');
-  }
-
-  const teams = createGroupedTeamsFromNames(d.teams.map((t) => t.name), d.settings, true, d.teams);
-  const matches = buildGroupFixtures(teams, d.settings);
-  setData({ teams, matches });
-  showAdminTab('teams');
-  adminMessage('Existing teams were shuffled and group fixtures were regenerated.', 'ok');
+  adminMessage(`${teams.length} teams saved${autoFixtures ? ' and league fixtures generated' : ''}.`, 'ok');
 };
 
 window.clearTeamsAndMatches = () => {
   if (!confirm('Clear all teams, fixtures, and results?')) return;
   setData({ teams: [], matches: [] });
   showAdminTab('teams');
-  adminMessage('Teams and fixtures cleared.', 'ok');
 };
 
-function buildGroupFixtures(teams, settings) {
-  const ms = [];
-  GROUPS.slice(0, settings.groupCount).forEach((g) => {
-    const arr = teams.filter((t) => t.group === g);
-    for (let i = 0; i < arr.length; i++) {
-      for (let j = i + 1; j < arr.length; j++) {
-        ms.push({
-          id: Date.now() + ms.length,
-          round: 'Group Stage',
-          group: g,
-          home: arr[i].name,
-          away: arr[j].name,
-          homeScore: '',
-          awayScore: '',
-          date: '',
-          time: ''
-        });
+function buildLeagueFixtures(teams, settings) {
+  const names = teams.map((t) => t.name);
+  if (names.length < 2) return [];
+
+  const arr = [...names];
+  if (arr.length % 2 === 1) arr.push('BYE');
+
+  const n = arr.length;
+  const rounds = n - 1;
+  const half = n / 2;
+  const generated = [];
+  let current = [...arr];
+
+  for (let r = 0; r < rounds; r++) {
+    const roundMatches = [];
+
+    for (let i = 0; i < half; i++) {
+      let home = current[i];
+      let away = current[n - 1 - i];
+      if (home === 'BYE' || away === 'BYE') continue;
+
+      // Better home/away distribution.
+      if ((r + i) % 2 === 1) {
+        [home, away] = [away, home];
       }
+
+      roundMatches.push({ home, away });
     }
-  });
-  return ms;
+
+    roundMatches.forEach((m) => {
+      generated.push({
+        id: Date.now() + generated.length,
+        round: `Matchweek ${r + 1}`,
+        home: m.home,
+        away: m.away,
+        homeScore: '',
+        awayScore: '',
+        date: '',
+        time: ''
+      });
+    });
+
+    current = [current[0], current[n - 1], ...current.slice(1, n - 1)];
+  }
+
+  if (settings.fixtureFormat === 'double') {
+    const firstLegCount = generated.length;
+    for (let i = 0; i < firstLegCount; i++) {
+      const m = generated[i];
+      const matchweekNumber = Number(String(m.round).match(/\d+/)?.[0] || 0) + rounds;
+      generated.push({
+        id: Date.now() + generated.length,
+        round: `Matchweek ${matchweekNumber}`,
+        home: m.away,
+        away: m.home,
+        homeScore: '',
+        awayScore: '',
+        date: '',
+        time: ''
+      });
+    }
+  }
+
+  return generated;
 }
 
 window.generateFixtures = () => {
   const d = data();
-  const ms = buildGroupFixtures(d.teams, d.settings);
-  setData({ matches: ms });
+  if (d.teams.length < 2) return adminMessage('Add at least 2 teams first.', 'bad');
+  const matchCount = d.settings.fixtureFormat === 'double'
+    ? d.teams.length * (d.teams.length - 1)
+    : (d.teams.length * (d.teams.length - 1)) / 2;
+
+  if (matchCount > 1500 && !confirm(`This will create ${matchCount} matches. Continue?`)) return;
+
+  d.matches = buildLeagueFixtures(d.teams, d.settings);
+  setData({ matches: d.matches });
   showAdminTab('fixtures');
-  adminMessage(`${ms.length} group fixtures generated.`, 'ok');
+  adminMessage(`${d.matches.length} league fixtures generated.`, 'ok');
 };
 
 window.clearFixtures = () => {
@@ -574,30 +545,25 @@ window.clearFixtures = () => {
 
 window.saveFixtureSchedule = () => {
   const d = data();
-  d.matches = d.matches.map((m) => {
-    const date = $(`#date_${m.id}`)?.value || '';
-    const time = $(`#time_${m.id}`)?.value || '';
-    return { ...m, date, time };
-  });
+  d.matches = d.matches.map((m) => ({
+    ...m,
+    date: $(`#date_${m.id}`)?.value || '',
+    time: $(`#time_${m.id}`)?.value || ''
+  }));
   setData({ matches: d.matches });
   showAdminTab('fixtures');
-  adminMessage('Fixture date/time saved successfully.', 'ok');
+  adminMessage('Fixture date/time saved.', 'ok');
 };
 
 window.applyBulkFixtureSchedule = () => {
   const date = $('#bulkFixtureDate')?.value || '';
   const time = $('#bulkFixtureTime')?.value || '';
   if (!date && !time) return adminMessage('Choose a date, time, or both first.', 'bad');
-
   const d = data();
-  d.matches = d.matches.map((m) => ({
-    ...m,
-    date: date || m.date || '',
-    time: time || m.time || ''
-  }));
+  d.matches = d.matches.map((m) => ({ ...m, date: date || m.date || '', time: time || m.time || '' }));
   setData({ matches: d.matches });
   showAdminTab('fixtures');
-  adminMessage('Date/time applied to all fixtures. You can still edit individual fixtures.', 'ok');
+  adminMessage('Date/time applied to all fixtures.', 'ok');
 };
 
 window.clearFixtureSchedule = () => {
@@ -606,20 +572,7 @@ window.clearFixtureSchedule = () => {
   d.matches = d.matches.map((m) => ({ ...m, date: '', time: '' }));
   setData({ matches: d.matches });
   showAdminTab('fixtures');
-  adminMessage('Fixture date/time cleared. Fixtures and scores were kept.', 'ok');
-};
-
-window.editResult = (id) => {
-  const d = data();
-  const m = d.matches.find((x) => x.id === id);
-  const hs = prompt(`${m.home} score`, m.homeScore);
-  if (hs === null) return;
-  const as = prompt(`${m.away} score`, m.awayScore);
-  if (as === null) return;
-  m.homeScore = hs;
-  m.awayScore = as;
-  setData({ matches: d.matches });
-  showAdminTab('results');
+  adminMessage('Fixture date/time cleared.', 'ok');
 };
 
 window.saveResultDeadline = () => {
@@ -638,64 +591,39 @@ window.saveResultDeadline = () => {
   const changed = applyResultDeadlineDefaults();
   showAdminTab('results');
 
-  if (changed > 0) {
-    adminMessage(`Deadline saved. ${changed} blank match result(s) were auto-recorded as 0-0 draws.`, 'ok');
-  } else {
-    adminMessage('Result deadline saved successfully.', 'ok');
-  }
+  if (changed > 0) adminMessage(`Deadline saved. ${changed} blank result(s) auto-recorded as 0-0.`, 'ok');
+  else adminMessage('Result deadline saved.', 'ok');
 };
 
 window.applyDeadlineDrawsNow = () => {
   const d = data();
-
-  if (!resultDeadlineDateTime(d.settings)) {
-    return adminMessage('Set the result deadline date and time first.', 'bad');
-  }
-
-  if (!isResultDeadlinePassed(d.settings)) {
-    return adminMessage('The deadline has not passed yet. 0-0 auto-draw will apply after the deadline.', 'bad');
-  }
+  if (!resultDeadlineDateTime(d.settings)) return adminMessage('Set the result deadline first.', 'bad');
+  if (!isResultDeadlinePassed(d.settings)) return adminMessage('Deadline has not passed yet.', 'bad');
 
   const changed = applyResultDeadlineDefaults();
   showAdminTab('results');
 
-  if (changed > 0) {
-    adminMessage(`${changed} blank match result(s) were auto-recorded as 0-0 draws. Admin can still edit them later.`, 'ok');
-  } else {
-    adminMessage('No blank results needed auto-draw. Existing results were kept.', 'ok');
-  }
+  if (changed > 0) adminMessage(`${changed} blank result(s) auto-recorded as 0-0.`, 'ok');
+  else adminMessage('No blank results needed auto-draw.', 'ok');
 };
 
 window.saveAllResults = () => {
   const d = data();
-  const invalid = [];
-
   d.matches = d.matches.map((m) => {
-    const hs = $(`#hs_${m.id}`)?.value.trim() ?? '';
-    const as = $(`#as_${m.id}`)?.value.trim() ?? '';
-
-    if ((hs === '' && as !== '') || (hs !== '' && as === '')) {
-      invalid.push(`${m.home} vs ${m.away}`);
-      return m;
-    }
-
+    const hs = $(`#hs_${m.id}`)?.value ?? m.homeScore;
+    const as = $(`#as_${m.id}`)?.value ?? m.awayScore;
     return { ...m, homeScore: hs, awayScore: as, autoDrawApplied: false, autoDrawAppliedAt: '' };
   });
-
-  if (invalid.length) {
-    return adminMessage(`Some matches have only one score filled: ${invalid.slice(0, 3).join(', ')}${invalid.length > 3 ? '...' : ''}`, 'bad');
-  }
-
   setData({ matches: d.matches });
   showAdminTab('results');
-  adminMessage('All results saved successfully.', 'ok');
+  adminMessage('All results saved.', 'ok');
 };
 
 window.clearAllScores = () => {
-  if (!confirm('Clear all scores but keep fixtures?')) return;
+  if (!confirm('Clear all scores? Fixtures will stay.')) return;
   const d = data();
   d.matches = d.matches.map((m) => ({ ...m, homeScore: '', awayScore: '', autoDrawApplied: false, autoDrawAppliedAt: '' }));
   setData({ matches: d.matches });
   showAdminTab('results');
-  adminMessage('All scores cleared.', 'ok');
+  adminMessage('Scores cleared.', 'ok');
 };

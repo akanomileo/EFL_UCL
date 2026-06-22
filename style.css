@@ -30,3 +30,33 @@ textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:12px
     min-width:150px;
   }
 }
+
+
+/* League format additions */
+.league-meta{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px}
+.meta-pill{background:#f3f4f6;border:1px solid var(--line);border-radius:999px;padding:8px 12px;font-weight:800;color:#374151}
+.round-title{margin:30px 0 12px;font-size:22px}
+.match{display:grid;grid-template-columns:minmax(0,1fr) 110px minmax(0,1fr);gap:18px;align-items:center;border-bottom:1px solid var(--line);padding:18px 0}
+.match:last-child{border-bottom:0}
+.team-name{font-size:18px;font-weight:900;line-height:1.25}
+.team-home{text-align:right}
+.team-away{text-align:left}
+.match-center{text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}
+.score{font-weight:900}
+.vs-pill{font-size:13px;text-transform:uppercase;letter-spacing:.12em;color:#6b7280;background:#f3f4f6;border:1px solid var(--line);padding:3px 10px;border-radius:999px}
+.score-result{font-size:20px;color:#111827}
+.match-date{font-size:13px;color:var(--muted);white-space:nowrap}
+.match-edit{text-align:center}
+.standings-table th,.standings-table td{text-align:center;vertical-align:middle}
+.standings-table th:first-child,.standings-table td:first-child{text-align:left}
+.standings-table th:not(:first-child),.standings-table td:not(:first-child){width:78px}
+.standings-table td{font-variant-numeric:tabular-nums}
+@media(max-width:620px){
+  .match{grid-template-columns:1fr 70px 1fr;gap:10px;padding:16px 0}
+  .team-name{font-size:15px}
+  .vs-pill{font-size:11px;padding:3px 8px}
+  .score-result{font-size:17px}
+  .match-date{font-size:11px;white-space:normal}
+  .standings-table th,.standings-table td{padding:10px 12px;min-width:58px}
+  .standings-table th:first-child,.standings-table td:first-child{min-width:150px}
+}
