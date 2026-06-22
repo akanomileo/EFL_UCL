@@ -209,8 +209,11 @@ function fixtureScheduleText(m) {
 }
 
 function matchCard(m, editable = false) {
-  const score = m.homeScore === '' || m.awayScore === '' ? 'vs' : `${m.homeScore} - ${m.awayScore}`;
-  return `<div class="match"><div><b>${escapeHtml(m.home)}</b><div class="small">${escapeHtml(fixtureScheduleText(m))} • ${escapeHtml(m.group || m.round)}</div><b>${escapeHtml(m.away)}</b></div><div class="score">${escapeHtml(score)}</div>${editable ? `<button class="btn" onclick="editResult(${m.id})">Edit</button>` : ''}</div>`;
+  const isPending = m.homeScore === '' || m.awayScore === '';
+  const score = isPending ? 'vs' : `${m.homeScore} - ${m.awayScore}`;
+  const scoreClass = isPending ? 'score vs-pill' : 'score score-result';
+
+  return `<div class="match fixture-match"><div class="team-name team-home">${escapeHtml(m.home)}</div><div class="match-center"><div class="${scoreClass}">${escapeHtml(score)}</div><div class="match-date">${escapeHtml(fixtureScheduleText(m))}</div></div><div class="team-name team-away">${escapeHtml(m.away)}</div>${editable ? `<div class="match-edit"><button class="btn" onclick="editResult(${m.id})">Edit</button></div>` : ''}</div>`;
 }
 
 function renderHome() {
