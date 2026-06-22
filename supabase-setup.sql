@@ -51,7 +51,7 @@ grant select, insert, update on public.efl_data to anon;
 insert into public.efl_data (key, value) values
 (
   'settings',
-  '{"tournamentName":"Elite Football League","teamLimit":48,"groupCount":8,"qualifyPerGroup":2,"teamsPerGroup":4,"adminPin":""}'::jsonb
+  '{"tournamentName":"Elite Football League","teamLimit":48,"groupCount":8,"qualifyPerGroup":2,"teamsPerGroup":4,"resultDeadlineDate":"","resultDeadlineTime":"","adminPin":""}'::jsonb
 ),
 (
   'teams',

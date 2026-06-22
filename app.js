@@ -25,6 +25,8 @@ const defaults = {
     groupCount: 8,
     qualifyPerGroup: 2,
     teamsPerGroup: 4,
+    resultDeadlineDate: '',
+    resultDeadlineTime: '',
     adminPin: ''
   },
   teams: [
@@ -56,6 +58,61 @@ function data() {
 function tournamentName(settings) {
   const s = settings || data().settings;
   return String(s.tournamentName || defaults.settings.tournamentName).trim() || defaults.settings.tournamentName;
+}
+
+function resultDeadlineDateTime(settings) {
+  const s = settings || data().settings;
+  const date = String(s.resultDeadlineDate || '').trim();
+  const time = String(s.resultDeadlineTime || '').trim();
+
+  if (!date || !time) return null;
+
+  const dt = new Date(`${date}T${time}`);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function resultDeadlineText(settings) {
+  const s = settings || data().settings;
+  if (!s.resultDeadlineDate || !s.resultDeadlineTime) return 'No result deadline set';
+  return `${s.resultDeadlineDate} ${s.resultDeadlineTime}`;
+}
+
+function isResultDeadlinePassed(settings) {
+  const dt = resultDeadlineDateTime(settings);
+  return Boolean(dt && Date.now() > dt.getTime());
+}
+
+function applyResultDeadlineDefaults() {
+  const d = data();
+
+  if (!isResultDeadlinePassed(d.settings)) {
+    return 0;
+  }
+
+  let changed = 0;
+  d.matches = d.matches.map((m) => {
+    const missingHome = m.homeScore === '' || m.homeScore === null || m.homeScore === undefined;
+    const missingAway = m.awayScore === '' || m.awayScore === null || m.awayScore === undefined;
+
+    if (missingHome && missingAway) {
+      changed += 1;
+      return {
+        ...m,
+        homeScore: '0',
+        awayScore: '0',
+        autoDrawApplied: true,
+        autoDrawAppliedAt: new Date().toISOString()
+      };
+    }
+
+    return m;
+  });
+
+  if (changed > 0) {
+    setData({ matches: d.matches });
+  }
+
+  return changed;
 }
 
 function setData(o) {
@@ -157,6 +214,7 @@ function matchCard(m, editable = false) {
 }
 
 function renderHome() {
+  applyResultDeadlineDefaults();
   init('home');
   const { teams, matches, settings } = data();
   const name = escapeHtml(tournamentName(settings));
@@ -164,15 +222,31 @@ function renderHome() {
 }
 
 function renderFixtures() {
+  applyResultDeadlineDefaults();
   init('fixtures');
   const ms = data().matches.filter((m) => m.homeScore === '' || m.awayScore === '');
-  $('#app').innerHTML = `<section class="section"><div class="wrap"><div class="title"><h2>Fixtures</h2></div><div class="card">${ms.map((m) => matchCard(m)).join('') || 'No upcoming fixtures.'}</div></div></section>`;
+  const groups = [...new Set(ms.map((m) => m.group || m.round || 'Other'))]
+    .sort((a, b) => GROUPS.indexOf(a) - GROUPS.indexOf(b));
+
+  const groupedHtml = groups.map((g) => {
+    const groupMatches = ms.filter((m) => (m.group || m.round || 'Other') === g);
+    const title = GROUPS.includes(g) ? `Group ${escapeHtml(g)}` : escapeHtml(g);
+    return `<h3 class="group-title">${title}</h3><div class="card">${groupMatches.map((m) => matchCard(m)).join('')}</div>`;
+  }).join('');
+
+  $('#app').innerHTML = `<section class="section"><div class="wrap"><div class="title"><h2>Fixtures</h2></div>${groupedHtml || '<div class="card">No upcoming fixtures.</div>'}</div></section>`;
 }
 
 function renderResults() {
+  applyResultDeadlineDefaults();
   init('results');
-  const ms = data().matches.filter((m) => m.homeScore !== '' && m.awayScore !== '');
-  $('#app').innerHTML = `<section class="section"><div class="wrap"><div class="title"><h2>Results</h2></div><div class="card">${ms.map((m) => matchCard(m)).join('') || 'No results yet.'}</div></div></section>`;
+  const d = data();
+  const ms = d.matches.filter((m) => m.homeScore !== '' && m.awayScore !== '');
+  const deadlineStatus = isResultDeadlinePassed(d.settings)
+    ? `Result deadline passed: ${escapeHtml(resultDeadlineText(d.settings))}. Blank results are auto-recorded as 0-0 draws.`
+    : `Result deadline: ${escapeHtml(resultDeadlineText(d.settings))}`;
+
+  $('#app').innerHTML = `<section class="section"><div class="wrap"><div class="title"><h2>Results</h2></div><p class="small">${deadlineStatus}</p><div class="card">${ms.map((m) => matchCard(m)).join('') || 'No results yet.'}</div></div></section>`;
 }
 
 function renderTeams() {
@@ -183,6 +257,7 @@ function renderTeams() {
 }
 
 function renderStandings() {
+  applyResultDeadlineDefaults();
   init('standings');
   const rows = standings();
   const groups = [...new Set(rows.map((r) => r.group))];
@@ -200,6 +275,7 @@ function qualified() {
 }
 
 function renderBracket() {
+  applyResultDeadlineDefaults();
   init('bracket');
   const q = qualified();
   const rounds = ['Qualified Teams', 'Round of 16', 'Quarter Finals', 'Semi Finals', 'Final'];
@@ -207,6 +283,7 @@ function renderBracket() {
 }
 
 function renderAdmin() {
+  applyResultDeadlineDefaults();
   init('');
   const logged = sessionStorage.getItem('efl_admin') === 'yes';
   $('#app').innerHTML = logged ? adminDash() : loginBox();
@@ -294,11 +371,26 @@ function showAdminTab(tab) {
   }
 
   if (tab === 'fixtures') {
-    c.innerHTML = `<h2>Fixtures + Optional Schedule</h2><div id="adminMessage"></div><div class="admin-actions"><button class="btn" onclick="generateFixtures()">Generate Group Fixtures</button><button class="btn alt" onclick="clearFixtureSchedule()">Clear Date/Time Only</button><button class="btn danger" onclick="clearFixtures()">Clear Fixtures</button></div><p class="small">Date and time are optional. Leave them blank if the fixture schedule is not confirmed yet.</p><div class="tool-card"><h3>Quick schedule apply</h3><p class="small">Optional shortcut: apply the same date/time to all fixtures, then adjust individual matches below.</p><div class="form compact"><input id="bulkFixtureDate" type="date"><input id="bulkFixtureTime" type="time"><button class="btn" onclick="applyBulkFixtureSchedule()">Apply to All Fixtures</button></div></div><br><div class="table-scroll"><table class="table"><tr><th>Group/Round</th><th>Match</th><th>Date</th><th>Time</th></tr>${matches.map((m) => `<tr><td>${escapeHtml(m.group || m.round)}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input id="date_${m.id}" type="date" value="${escapeHtml((m.date && m.date !== 'TBA') ? m.date : '')}"></td><td><input id="time_${m.id}" type="time" value="${escapeHtml((m.time && m.time !== 'TBA') ? m.time : '')}"></td></tr>`).join('') || '<tr><td colspan="4">No fixtures yet. Generate fixtures first.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveFixtureSchedule()">Save Fixture Date/Time</button></div>`;
+    const fixtureGroups = [...new Set(matches.map((m) => m.group || m.round || 'Other'))]
+      .sort((a, b) => GROUPS.indexOf(a) - GROUPS.indexOf(b));
+
+    const fixtureTables = fixtureGroups.map((g) => {
+      const title = GROUPS.includes(g) ? `Group ${escapeHtml(g)}` : escapeHtml(g);
+      const rows = matches.filter((m) => (m.group || m.round || 'Other') === g).map((m) => `<tr><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input id="date_${m.id}" type="date" value="${escapeHtml((m.date && m.date !== 'TBA') ? m.date : '')}"></td><td><input id="time_${m.id}" type="time" value="${escapeHtml((m.time && m.time !== 'TBA') ? m.time : '')}"></td></tr>`).join('');
+
+      return `<h3 class="group-title">${title}</h3><div class="table-scroll"><table class="table"><tr><th>Match</th><th>Date</th><th>Time</th></tr>${rows}</table></div>`;
+    }).join('');
+
+    c.innerHTML = `<h2>Fixtures + Optional Schedule</h2><div id="adminMessage"></div><div class="admin-actions"><button class="btn" onclick="generateFixtures()">Generate Group Fixtures</button><button class="btn alt" onclick="clearFixtureSchedule()">Clear Date/Time Only</button><button class="btn danger" onclick="clearFixtures()">Clear Fixtures</button></div><p class="small">Date and time are optional. Leave them blank if the fixture schedule is not confirmed yet.</p><div class="tool-card"><h3>Quick schedule apply</h3><p class="small">Optional shortcut: apply the same date/time to all fixtures, then adjust individual matches below.</p><div class="form compact"><input id="bulkFixtureDate" type="date"><input id="bulkFixtureTime" type="time"><button class="btn" onclick="applyBulkFixtureSchedule()">Apply to All Fixtures</button></div></div><br>${fixtureTables || '<div class="card">No fixtures yet. Generate fixtures first.</div>'}<div class="admin-actions"><button class="btn" onclick="saveFixtureSchedule()">Save Fixture Date/Time</button></div>`;
   }
 
   if (tab === 'results') {
-    c.innerHTML = `<h2>Fast Result Entry</h2><div id="adminMessage"></div><p class="small">Enter all scores on one screen, then click Save All Results. Leave both score boxes blank if the match has not been played.</p><div class="table-scroll"><table class="table result-table"><tr><th>Group/Round</th><th>Match</th><th>Home</th><th>Away</th></tr>${matches.map((m) => `<tr><td>${escapeHtml(m.group || m.round)}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input class="score-input" id="hs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(m.homeScore)}"></td><td><input class="score-input" id="as_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(m.awayScore)}"></td></tr>`).join('') || '<tr><td colspan="4">No matches yet. Generate fixtures first.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveAllResults()">Save All Results</button><button class="btn alt" onclick="clearAllScores()">Clear All Scores</button></div>`;
+    const deadlinePassed = isResultDeadlinePassed(settings);
+    const deadlineStatus = deadlinePassed
+      ? `Deadline passed: ${escapeHtml(resultDeadlineText(settings))}. Blank results will become 0-0.`
+      : `Deadline: ${escapeHtml(resultDeadlineText(settings))}`;
+
+    c.innerHTML = `<h2>Fast Result Entry</h2><div id="adminMessage"></div><div class="tool-card"><h3>Result filling deadline</h3><p class="small">Optional. After this date and time, any match without a result will automatically become a 0-0 draw. Admin can still edit the result later.</p><div class="form compact"><input id="resultDeadlineDate" type="date" value="${escapeHtml(settings.resultDeadlineDate || '')}"><input id="resultDeadlineTime" type="time" value="${escapeHtml(settings.resultDeadlineTime || '')}"><button class="btn" onclick="saveResultDeadline()">Save Deadline</button><button class="btn alt" onclick="applyDeadlineDrawsNow()">Apply 0-0 Now</button></div><p class="small">${deadlineStatus}</p></div><br><p class="small">Enter all scores on one screen, then click Save All Results. Leave both score boxes blank if the match has not been played yet.</p><div class="table-scroll"><table class="table result-table"><tr><th>Group/Round</th><th>Match</th><th>Home</th><th>Away</th><th>Status</th></tr>${matches.map((m) => `<tr><td>${escapeHtml(m.group || m.round)}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input class="score-input" id="hs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(m.homeScore)}"></td><td><input class="score-input" id="as_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(m.awayScore)}"></td><td>${m.autoDrawApplied ? '<span class="tag">Auto 0-0</span>' : '<span class="small">Manual / pending</span>'}</td></tr>`).join('') || '<tr><td colspan="5">No matches yet. Generate fixtures first.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveAllResults()">Save All Results</button><button class="btn alt" onclick="clearAllScores()">Clear All Scores</button></div>`;
   }
 }
 
@@ -518,6 +610,50 @@ window.editResult = (id) => {
   showAdminTab('results');
 };
 
+window.saveResultDeadline = () => {
+  const d = data();
+  const date = ($('#resultDeadlineDate')?.value || '').trim();
+  const time = ($('#resultDeadlineTime')?.value || '').trim();
+
+  if ((date && !time) || (!date && time)) {
+    return adminMessage('Please set both deadline date and deadline time, or leave both blank.', 'bad');
+  }
+
+  d.settings.resultDeadlineDate = date;
+  d.settings.resultDeadlineTime = time;
+  setData({ settings: d.settings });
+
+  const changed = applyResultDeadlineDefaults();
+  showAdminTab('results');
+
+  if (changed > 0) {
+    adminMessage(`Deadline saved. ${changed} blank match result(s) were auto-recorded as 0-0 draws.`, 'ok');
+  } else {
+    adminMessage('Result deadline saved successfully.', 'ok');
+  }
+};
+
+window.applyDeadlineDrawsNow = () => {
+  const d = data();
+
+  if (!resultDeadlineDateTime(d.settings)) {
+    return adminMessage('Set the result deadline date and time first.', 'bad');
+  }
+
+  if (!isResultDeadlinePassed(d.settings)) {
+    return adminMessage('The deadline has not passed yet. 0-0 auto-draw will apply after the deadline.', 'bad');
+  }
+
+  const changed = applyResultDeadlineDefaults();
+  showAdminTab('results');
+
+  if (changed > 0) {
+    adminMessage(`${changed} blank match result(s) were auto-recorded as 0-0 draws. Admin can still edit them later.`, 'ok');
+  } else {
+    adminMessage('No blank results needed auto-draw. Existing results were kept.', 'ok');
+  }
+};
+
 window.saveAllResults = () => {
   const d = data();
   const invalid = [];
@@ -531,7 +667,7 @@ window.saveAllResults = () => {
       return m;
     }
 
-    return { ...m, homeScore: hs, awayScore: as };
+    return { ...m, homeScore: hs, awayScore: as, autoDrawApplied: false, autoDrawAppliedAt: '' };
   });
 
   if (invalid.length) {
@@ -546,7 +682,7 @@ window.saveAllResults = () => {
 window.clearAllScores = () => {
   if (!confirm('Clear all scores but keep fixtures?')) return;
   const d = data();
-  d.matches = d.matches.map((m) => ({ ...m, homeScore: '', awayScore: '' }));
+  d.matches = d.matches.map((m) => ({ ...m, homeScore: '', awayScore: '', autoDrawApplied: false, autoDrawAppliedAt: '' }));
   setData({ matches: d.matches });
   showAdminTab('results');
   adminMessage('All scores cleared.', 'ok');
