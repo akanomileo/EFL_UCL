@@ -249,7 +249,16 @@ function renderResults() {
     ? `Result deadline passed: ${escapeHtml(resultDeadlineText(d.settings))}. Blank results are auto-recorded as 0-0 draws.`
     : `Result deadline: ${escapeHtml(resultDeadlineText(d.settings))}`;
 
-  $('#app').innerHTML = `<section class="section"><div class="wrap"><div class="title"><h2>Results</h2></div><p class="small">${deadlineStatus}</p><div class="card">${ms.map((m) => matchCard(m)).join('') || 'No results yet.'}</div></div></section>`;
+  const groups = [...new Set(ms.map((m) => m.group || m.round || 'Other'))]
+    .sort((a, b) => GROUPS.indexOf(a) - GROUPS.indexOf(b));
+
+  const groupedHtml = groups.map((g) => {
+    const groupMatches = ms.filter((m) => (m.group || m.round || 'Other') === g);
+    const title = GROUPS.includes(g) ? `Group ${escapeHtml(g)}` : escapeHtml(g);
+    return `<h3 class="group-title">${title}</h3><div class="card">${groupMatches.map((m) => matchCard(m)).join('')}</div>`;
+  }).join('');
+
+  $('#app').innerHTML = `<section class="section"><div class="wrap"><div class="title"><h2>Results</h2></div><p class="small">${deadlineStatus}</p>${groupedHtml || '<div class="card">No results yet.</div>'}</div></section>`;
 }
 
 function renderTeams() {
