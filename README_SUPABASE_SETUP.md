@@ -13,7 +13,7 @@ supabase-sync.js
 Replace:
 
 ```javascript
-const SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL_HERE";
+const SUPABASE_URL = "https://gcxlwxqqpiopverfznyn.supabase.co";
 const SUPABASE_ANON_KEY = "PASTE_YOUR_SUPABASE_ANON_KEY_HERE";
 ```
 
@@ -98,3 +98,8 @@ supabase-setup.sql
 The included SQL uses public read/write policies for fast testing.
 That means anyone who knows your site structure could write data.
 For production, use Supabase Auth and admin-only policies.
+
+
+## Important fix in this version
+
+All HTML files now load the Supabase CDN and `supabase-sync.js`. They no longer reference `firebase-sync.js`.

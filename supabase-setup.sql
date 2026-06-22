@@ -51,7 +51,7 @@ grant select, insert, update on public.efl_data to anon;
 insert into public.efl_data (key, value) values
 (
   'settings',
-  '{"teamLimit":48,"groupCount":8,"qualifyPerGroup":2,"teamsPerGroup":4,"adminPin":"1234"}'::jsonb
+  '{"tournamentName":"Elite Football League","teamLimit":48,"groupCount":8,"qualifyPerGroup":2,"teamsPerGroup":4,"adminPin":"1234"}'::jsonb
 ),
 (
   'teams',
@@ -62,3 +62,11 @@ insert into public.efl_data (key, value) values
   '[{"id":1,"round":"Group Stage","group":"A","home":"Team A","away":"Team B","homeScore":"","awayScore":"","date":"2026-06-10","time":"16:00"},{"id":2,"round":"Group Stage","group":"A","home":"Team C","away":"Team D","homeScore":"","awayScore":"","date":"2026-06-10","time":"18:00"},{"id":3,"round":"Group Stage","group":"B","home":"Team E","away":"Team F","homeScore":"","awayScore":"","date":"2026-06-11","time":"16:00"},{"id":4,"round":"Group Stage","group":"B","home":"Team G","away":"Team H","homeScore":"","awayScore":"","date":"2026-06-11","time":"18:00"}]'::jsonb
 )
 on conflict (key) do nothing;
+
+
+-- Optional upgrade for existing Supabase projects:
+-- If your settings row already existed before this version, this adds tournamentName without deleting your teams or matches.
+update public.efl_data
+set value = jsonb_set(value, '{tournamentName}', to_jsonb(coalesce(value->>'tournamentName', 'Elite Football League')), true),
+    updated_at = now()
+where key = 'settings';

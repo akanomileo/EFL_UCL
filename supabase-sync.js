@@ -5,7 +5,7 @@
 // 1) Replace these two values from your Supabase project:
 // Supabase Dashboard → Project Settings → Data API
 const SUPABASE_URL = "https://gcxlwxqqpiopverfznyn.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_ZpAOR-NpGMXnAUJwfe6P3A_mQb-sjj4";
+const SUPABASE_ANON_KEY = "sb_publishable_ZpAOR-NpGMXnAUJwfe6P3A_mQb-sjj4"; // publishable key
 
 const TABLE_NAME = "efl_data";
 
