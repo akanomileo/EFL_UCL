@@ -1,0 +1,10 @@
+[
+  {"id":1,"name":"Team A","group":"A"},
+  {"id":2,"name":"Team B","group":"A"},
+  {"id":3,"name":"Team C","group":"A"},
+  {"id":4,"name":"Team D","group":"A"},
+  {"id":5,"name":"Team E","group":"B"},
+  {"id":6,"name":"Team F","group":"B"},
+  {"id":7,"name":"Team G","group":"B"},
+  {"id":8,"name":"Team H","group":"B"}
+]
