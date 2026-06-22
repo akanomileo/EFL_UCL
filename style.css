@@ -2,3 +2,31 @@
 
 textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;resize:vertical;font:inherit;line-height:1.5}.admin-tools{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}.tool-card{background:#f9fafb;border:1px solid var(--line);border-radius:var(--radius);padding:18px}.tool-card h3{margin-top:0}.check-row{display:flex;flex-wrap:wrap;gap:14px;margin:12px 0}.check-row label{display:flex;align-items:center;gap:8px;font-weight:700;color:var(--muted)}.compact{gap:10px}.admin-actions{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}.btn.danger,.danger{background:var(--danger)!important;color:#fff!important}.notice{border-radius:14px;padding:12px 14px;margin:12px 0;font-weight:800}.notice.ok{background:#dcfce7;color:#166534;border:1px solid #86efac}.notice.bad{background:#fee2e2;color:#991b1b;border:1px solid #fecaca}.table-scroll{width:100%;overflow:auto;border-radius:var(--radius)}.score-input{width:78px!important;max-width:90px;text-align:center;font-weight:900}.result-table td,.result-table th{vertical-align:middle}.result-table input{margin:auto}@media(max-width:850px){.admin-tools{grid-template-columns:1fr}.score-input{width:64px!important}.table-scroll{border:1px solid var(--line)}}
 @media(max-width:620px){.match{grid-template-columns:1fr 70px 1fr;gap:10px;padding:16px 0}.team-name{font-size:15px}.vs-pill{font-size:11px;padding:3px 8px}.score-result{font-size:17px}.match-date{font-size:11px;white-space:normal}}
+/* Standings alignment fix */
+.standings-table th,
+.standings-table td{
+  text-align:center;
+  vertical-align:middle;
+}
+.standings-table th:first-child,
+.standings-table td:first-child{
+  text-align:left;
+}
+.standings-table th:not(:first-child),
+.standings-table td:not(:first-child){
+  width:78px;
+}
+.standings-table td{
+  font-variant-numeric:tabular-nums;
+}
+@media(max-width:620px){
+  .standings-table th,
+  .standings-table td{
+    padding:10px 12px;
+    min-width:58px;
+  }
+  .standings-table th:first-child,
+  .standings-table td:first-child{
+    min-width:150px;
+  }
+}
