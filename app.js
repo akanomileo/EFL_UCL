@@ -25,7 +25,7 @@ const defaults = {
     groupCount: 8,
     qualifyPerGroup: 2,
     teamsPerGroup: 4,
-    adminPin: '1234'
+    adminPin: ''
   },
   teams: [
     { id: 1, name: 'Team A', group: 'A' },
@@ -143,9 +143,17 @@ function standings() {
   return Object.values(map).sort((a, b) => a.group.localeCompare(b.group) || b.Pts - a.Pts || b.GD - a.GD || b.GF - a.GF);
 }
 
+function fixtureScheduleText(m) {
+  const date = String(m.date || '').trim();
+  const time = String(m.time || '').trim();
+  const dateText = date && date !== 'TBA' ? date : 'TBA';
+  const timeText = time && time !== 'TBA' ? time : '';
+  return timeText ? `${dateText} • ${timeText}` : dateText;
+}
+
 function matchCard(m, editable = false) {
   const score = m.homeScore === '' || m.awayScore === '' ? 'vs' : `${m.homeScore} - ${m.awayScore}`;
-  return `<div class="match"><div><b>${escapeHtml(m.home)}</b><div class="small">${escapeHtml(m.date)} • ${escapeHtml(m.time)} • ${escapeHtml(m.group || m.round)}</div><b>${escapeHtml(m.away)}</b></div><div class="score">${escapeHtml(score)}</div>${editable ? `<button class="btn" onclick="editResult(${m.id})">Edit</button>` : ''}</div>`;
+  return `<div class="match"><div><b>${escapeHtml(m.home)}</b><div class="small">${escapeHtml(fixtureScheduleText(m))} • ${escapeHtml(m.group || m.round)}</div><b>${escapeHtml(m.away)}</b></div><div class="score">${escapeHtml(score)}</div>${editable ? `<button class="btn" onclick="editResult(${m.id})">Edit</button>` : ''}</div>`;
 }
 
 function renderHome() {
@@ -206,7 +214,12 @@ function renderAdmin() {
 }
 
 function loginBox() {
-  return `<section class="section"><div class="wrap"><div class="panel" style="max-width:420px;margin:auto"><h2>Admin Login</h2><div class="form"><input id="pin" type="password" placeholder="PIN"><button class="btn" id="loginBtn">Login</button><p class="small">Default PIN: 1234</p></div></div></div></section>`;
+  const settings = data().settings;
+  if (!settings.adminPin) {
+    return `<section class="section"><div class="wrap"><div class="panel" style="max-width:420px;margin:auto"><h2>Create Admin PIN</h2><p class="small">No default PIN is shown or used. Create your private admin PIN before managing the tournament.</p><div class="form"><input id="newPin" type="password" placeholder="New admin PIN"><input id="confirmPin" type="password" placeholder="Confirm admin PIN"><button class="btn" id="createPinBtn">Create PIN</button></div></div></div></section>`;
+  }
+
+  return `<section class="section"><div class="wrap"><div class="panel" style="max-width:420px;margin:auto"><h2>Admin Login</h2><div class="form"><input id="pin" type="password" placeholder="Admin PIN"><button class="btn" id="loginBtn">Login</button></div></div></div></section>`;
 }
 
 function adminDash() {
@@ -214,6 +227,23 @@ function adminDash() {
 }
 
 function bindAdmin() {
+  const createPinBtn = $('#createPinBtn');
+  if (createPinBtn) {
+    createPinBtn.onclick = () => {
+      const newPin = ($('#newPin')?.value || '').trim();
+      const confirmPin = ($('#confirmPin')?.value || '').trim();
+
+      if (newPin.length < 4) return alert('PIN must be at least 4 characters.');
+      if (newPin !== confirmPin) return alert('PINs do not match.');
+
+      const s = data().settings;
+      s.adminPin = newPin;
+      setData({ settings: s });
+      sessionStorage.setItem('efl_admin', 'yes');
+      location.reload();
+    };
+  }
+
   const lb = $('#loginBtn');
   if (lb) {
     lb.onclick = () => {
@@ -252,7 +282,7 @@ function showAdminTab(tab) {
   const c = $('#adminContent');
 
   if (tab === 'settings') {
-    c.innerHTML = `<h2>Tournament Settings</h2><div id="adminMessage"></div><div class="form"><label>Tournament name <input id="tournamentName" value="${escapeHtml(tournamentName(settings))}" placeholder="Example: Elite Football League"></label><label>Number of groups <input id="groupCount" type="number" min="1" max="12" value="${settings.groupCount}"></label><label>Teams per group <input id="teamsPerGroup" type="number" min="2" max="8" value="${settings.teamsPerGroup}"></label><label>Teams qualify per group <input id="qualifyPerGroup" type="number" min="1" max="8" value="${settings.qualifyPerGroup}"></label><label>Admin PIN <input id="adminPin" value="${escapeHtml(settings.adminPin)}"></label><button class="btn" onclick="saveSettings()">Save Settings</button></div>`;
+    c.innerHTML = `<h2>Tournament Settings</h2><div id="adminMessage"></div><div class="form"><label>Tournament name <input id="tournamentName" value="${escapeHtml(tournamentName(settings))}" placeholder="Example: Elite Football League"></label><label>Number of groups <input id="groupCount" type="number" min="1" max="12" value="${settings.groupCount}"></label><label>Teams per group <input id="teamsPerGroup" type="number" min="2" max="8" value="${settings.teamsPerGroup}"></label><label>Teams qualify per group <input id="qualifyPerGroup" type="number" min="1" max="8" value="${settings.qualifyPerGroup}"></label><label>Admin PIN <input id="adminPin" type="password" value="${escapeHtml(settings.adminPin)}" placeholder="Set admin PIN"></label><button class="btn" onclick="saveSettings()">Save Settings</button></div>`;
   }
 
   if (tab === 'teams') {
@@ -264,7 +294,7 @@ function showAdminTab(tab) {
   }
 
   if (tab === 'fixtures') {
-    c.innerHTML = `<h2>Fixtures</h2><div id="adminMessage"></div><div class="admin-actions"><button class="btn" onclick="generateFixtures()">Generate Group Fixtures</button><button class="btn alt" onclick="clearFixtures()">Clear Fixtures</button></div><p class="small">Generate after teams are assigned into groups.</p><div class="card">${matches.map((m) => matchCard(m, false)).join('') || '<p class="small">No fixtures yet.</p>'}</div>`;
+    c.innerHTML = `<h2>Fixtures + Optional Schedule</h2><div id="adminMessage"></div><div class="admin-actions"><button class="btn" onclick="generateFixtures()">Generate Group Fixtures</button><button class="btn alt" onclick="clearFixtureSchedule()">Clear Date/Time Only</button><button class="btn danger" onclick="clearFixtures()">Clear Fixtures</button></div><p class="small">Date and time are optional. Leave them blank if the fixture schedule is not confirmed yet.</p><div class="tool-card"><h3>Quick schedule apply</h3><p class="small">Optional shortcut: apply the same date/time to all fixtures, then adjust individual matches below.</p><div class="form compact"><input id="bulkFixtureDate" type="date"><input id="bulkFixtureTime" type="time"><button class="btn" onclick="applyBulkFixtureSchedule()">Apply to All Fixtures</button></div></div><br><div class="table-scroll"><table class="table"><tr><th>Group/Round</th><th>Match</th><th>Date</th><th>Time</th></tr>${matches.map((m) => `<tr><td>${escapeHtml(m.group || m.round)}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input id="date_${m.id}" type="date" value="${escapeHtml((m.date && m.date !== 'TBA') ? m.date : '')}"></td><td><input id="time_${m.id}" type="time" value="${escapeHtml((m.time && m.time !== 'TBA') ? m.time : '')}"></td></tr>`).join('') || '<tr><td colspan="4">No fixtures yet. Generate fixtures first.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveFixtureSchedule()">Save Fixture Date/Time</button></div>`;
   }
 
   if (tab === 'results') {
@@ -314,9 +344,13 @@ window.saveSettings = () => {
   s.groupCount = Math.max(1, Math.min(12, Number($('#groupCount').value) || 1));
   s.teamsPerGroup = Math.max(2, Math.min(8, Number($('#teamsPerGroup').value) || 4));
   s.qualifyPerGroup = Math.max(1, Math.min(8, Number($('#qualifyPerGroup').value) || 2));
-  s.adminPin = $('#adminPin').value || '1234';
+  const newAdminPin = ($('#adminPin')?.value || '').trim();
+  if (newAdminPin.length < 4) {
+    return adminMessage('Admin PIN must be at least 4 characters. No default PIN is used.', 'bad');
+  }
+  s.adminPin = newAdminPin;
   setData({ settings: s });
-  adminMessage('Settings saved. Use Bulk Teams to create or reshuffle groups.', 'ok');
+  adminMessage('Settings saved. Your admin PIN is private and no default PIN is displayed.', 'ok');
 };
 
 window.addTeam = () => {
@@ -410,8 +444,8 @@ function buildGroupFixtures(teams, settings) {
           away: arr[j].name,
           homeScore: '',
           awayScore: '',
-          date: 'TBA',
-          time: 'TBA'
+          date: '',
+          time: ''
         });
       }
     }
@@ -432,6 +466,43 @@ window.clearFixtures = () => {
   setData({ matches: [] });
   showAdminTab('fixtures');
   adminMessage('Fixtures cleared.', 'ok');
+};
+
+window.saveFixtureSchedule = () => {
+  const d = data();
+  d.matches = d.matches.map((m) => {
+    const date = $(`#date_${m.id}`)?.value || '';
+    const time = $(`#time_${m.id}`)?.value || '';
+    return { ...m, date, time };
+  });
+  setData({ matches: d.matches });
+  showAdminTab('fixtures');
+  adminMessage('Fixture date/time saved successfully.', 'ok');
+};
+
+window.applyBulkFixtureSchedule = () => {
+  const date = $('#bulkFixtureDate')?.value || '';
+  const time = $('#bulkFixtureTime')?.value || '';
+  if (!date && !time) return adminMessage('Choose a date, time, or both first.', 'bad');
+
+  const d = data();
+  d.matches = d.matches.map((m) => ({
+    ...m,
+    date: date || m.date || '',
+    time: time || m.time || ''
+  }));
+  setData({ matches: d.matches });
+  showAdminTab('fixtures');
+  adminMessage('Date/time applied to all fixtures. You can still edit individual fixtures.', 'ok');
+};
+
+window.clearFixtureSchedule = () => {
+  if (!confirm('Clear date and time from all fixtures? Scores and matches will stay.')) return;
+  const d = data();
+  d.matches = d.matches.map((m) => ({ ...m, date: '', time: '' }));
+  setData({ matches: d.matches });
+  showAdminTab('fixtures');
+  adminMessage('Fixture date/time cleared. Fixtures and scores were kept.', 'ok');
 };
 
 window.editResult = (id) => {

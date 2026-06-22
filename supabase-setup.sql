@@ -51,7 +51,7 @@ grant select, insert, update on public.efl_data to anon;
 insert into public.efl_data (key, value) values
 (
   'settings',
-  '{"tournamentName":"Elite Football League","teamLimit":48,"groupCount":8,"qualifyPerGroup":2,"teamsPerGroup":4,"adminPin":"1234"}'::jsonb
+  '{"tournamentName":"Elite Football League","teamLimit":48,"groupCount":8,"qualifyPerGroup":2,"teamsPerGroup":4,"adminPin":""}'::jsonb
 ),
 (
   'teams',
@@ -70,3 +70,13 @@ update public.efl_data
 set value = jsonb_set(value, '{tournamentName}', to_jsonb(coalesce(value->>'tournamentName', 'Elite Football League')), true),
     updated_at = now()
 where key = 'settings';
+
+
+-- Optional security upgrade:
+-- Run this only if you want to remove the old default PIN from an existing project.
+-- After running it, open /admin.html and create a new private admin PIN.
+update public.efl_data
+set value = jsonb_set(value, '{adminPin}', '""'::jsonb, true),
+    updated_at = now()
+where key = 'settings'
+  and value->>'adminPin' = '1234';
