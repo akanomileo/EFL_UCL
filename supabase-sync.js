@@ -1,21 +1,24 @@
-// Supabase sync for EFL League website
-// Uses a separate table from the tournament website, so both can exist in the same Supabase project.
+// Supabase sync for EFL website
+// This keeps tournament data shared online through Supabase Realtime.
+// Works on GitHub Pages, Netlify, Vercel, or any static hosting.
 
+// 1) Replace these two values from your Supabase project:
+// Supabase Dashboard → Project Settings → Data API
 const SUPABASE_URL = "https://gcxlwxqqpiopverfznyn.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_ZpAOR-NpGMXnAUJwfe6P3A_mQb-sjj4";
+const SUPABASE_ANON_KEY = "sb_publishable_ZpAOR-NpGMXnAUJwfe6P3A_mQb-sjj4"; // publishable key
 
-const TABLE_NAME = "efl_league_data";
+const TABLE_NAME = "efl_data";
 
 const keyMap = {
-  league_settings: "settings",
-  league_teams: "teams",
-  league_matches: "matches"
+  efl_settings: "settings",
+  efl_teams: "teams",
+  efl_matches: "matches"
 };
 
 const reverseKeyMap = {
-  settings: "league_settings",
-  teams: "league_teams",
-  matches: "league_matches"
+  settings: "efl_settings",
+  teams: "efl_teams",
+  matches: "efl_matches"
 };
 
 let applyingRemoteUpdate = false;
@@ -42,35 +45,58 @@ function getCurrentSiteData() {
   if (typeof window.data === "function") return window.data();
 
   return {
-    settings: safeParse(localStorage.getItem("league_settings")),
-    teams: safeParse(localStorage.getItem("league_teams")),
-    matches: safeParse(localStorage.getItem("league_matches"))
+    settings: safeParse(localStorage.getItem("efl_settings")),
+    teams: safeParse(localStorage.getItem("efl_teams")),
+    matches: safeParse(localStorage.getItem("efl_matches"))
   };
+}
+
+function rowsFromSiteData(siteData) {
+  return [
+    { key: "settings", value: siteData.settings },
+    { key: "teams", value: siteData.teams },
+    { key: "matches", value: siteData.matches }
+  ].filter((row) => row.value !== undefined && row.value !== null);
 }
 
 function saveLocal(remoteData) {
   if (!remoteData) return;
+
   applyingRemoteUpdate = true;
+
   Object.entries(reverseKeyMap).forEach(([remoteKey, localStorageKey]) => {
     if (remoteData[remoteKey] !== undefined && remoteData[remoteKey] !== null) {
       localStorage.setItem(localStorageKey, JSON.stringify(remoteData[remoteKey]));
     }
   });
+
   applyingRemoteUpdate = false;
 }
 
 function rerender() {
-  if (typeof window.rerenderCurrentPage === "function") window.rerenderCurrentPage();
+  if (typeof window.rerenderCurrentPage === "function") {
+    window.rerenderCurrentPage();
+  }
 }
 
 function setStatus(status, error = null) {
-  window.dispatchEvent(new CustomEvent("supabase-league-status", { detail: { status, error } }));
+  window.dispatchEvent(new CustomEvent("supabase-efl-status", {
+    detail: { status, error }
+  }));
 }
 
 async function upsertRows(rows) {
   if (!rows || rows.length === 0) return;
-  const withTimestamp = rows.map((row) => ({ ...row, updated_at: new Date().toISOString() }));
-  const { error } = await supabaseClient.from(TABLE_NAME).upsert(withTimestamp, { onConflict: "key" });
+
+  const withTimestamp = rows.map((row) => ({
+    ...row,
+    updated_at: new Date().toISOString()
+  }));
+
+  const { error } = await supabaseClient
+    .from(TABLE_NAME)
+    .upsert(withTimestamp, { onConflict: "key" });
+
   if (error) throw error;
 }
 
@@ -93,17 +119,23 @@ async function loadFromSupabase() {
   ["settings", "teams", "matches"].forEach((key) => {
     if (remoteData[key] === undefined || remoteData[key] === null) {
       remoteData[key] = siteData[key];
-      if (siteData[key] !== undefined && siteData[key] !== null) missingRows.push({ key, value: siteData[key] });
+      if (siteData[key] !== undefined && siteData[key] !== null) {
+        missingRows.push({ key, value: siteData[key] });
+      }
     }
   });
 
-  if (missingRows.length > 0) await upsertRows(missingRows);
+  if (missingRows.length > 0) {
+    await upsertRows(missingRows);
+  }
 
   saveLocal(remoteData);
   rerender();
 }
 
-window.leagueSync = {
+// app.js still calls window.firebaseEFL.saveKey().
+// Keep this alias so we do not need to rewrite the whole website.
+window.firebaseEFL = {
   async saveKey(localStorageKey, value) {
     if (applyingRemoteUpdate) return;
     if (!supabaseClient) return;
@@ -121,24 +153,21 @@ window.leagueSync = {
   }
 };
 
-// Backward-compatible alias.
-window.firebaseEFL = window.leagueSync;
-
 async function startSupabaseSync() {
   if (!isConfigured()) {
-    console.warn("Supabase is not configured.");
+    console.warn("Supabase is not configured yet. Replace SUPABASE_URL and SUPABASE_ANON_KEY in supabase-sync.js.");
     setStatus("not-configured");
     return;
   }
 
   if (!window.supabase || !window.supabase.createClient) {
-    console.error("Supabase CDN did not load.");
+    console.error("Supabase CDN did not load. Check your internet connection or CDN script tag.");
     setStatus("cdn-failed");
     return;
   }
 
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  window.supabaseLeagueClient = supabaseClient;
+  window.supabaseEFLClient = supabaseClient;
 
   try {
     await loadFromSupabase();
@@ -149,16 +178,20 @@ async function startSupabaseSync() {
   }
 
   supabaseClient
-    .channel("efl_league_data_realtime")
-    .on("postgres_changes", { event: "*", schema: "public", table: TABLE_NAME }, async () => {
-      try {
-        await loadFromSupabase();
-        setStatus("connected");
-      } catch (error) {
-        console.error("Supabase realtime reload failed:", error);
-        setStatus("realtime-reload-failed", error);
+    .channel("efl_data_realtime")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: TABLE_NAME },
+      async () => {
+        try {
+          await loadFromSupabase();
+          setStatus("connected");
+        } catch (error) {
+          console.error("Supabase realtime reload failed:", error);
+          setStatus("realtime-reload-failed", error);
+        }
       }
-    })
+    )
     .subscribe((status) => {
       if (status === "SUBSCRIBED") setStatus("realtime-connected");
     });
