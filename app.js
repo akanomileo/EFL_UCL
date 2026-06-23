@@ -245,7 +245,7 @@ function renderHome() {
   init('home');
   const { teams, matches, settings } = data();
   const name = escapeHtml(tournamentName(settings));
-  $('#app').innerHTML = `<section class="hero"><div class="wrap hero-grid"><div class="panel"><h1>${name}</h1><a class="btn" href="fixtures.html">View Fixtures</a> <a class="btn alt" href="standings.html">View Standings</a><div class="stats"><div class="stat"><b>${teams.length}</b><br><span>Teams</span></div><div class="stat"><b>${settings.groupCount}</b><br><span>Groups</span></div><div class="stat"><b>${settings.qualifyPerGroup}</b><br><span>Qualify / Group</span></div></div></div><div class="panel"><h2>Upcoming Fixtures</h2>${matches.slice(0, 4).map((m) => matchCard(m)).join('')}</div></div></section><section class="section"><div class="wrap"><div class="title"><h2>Latest Results</h2><a href="results.html">View all</a></div><div class="card">${matches.filter((m) => m.homeScore !== '' && m.awayScore !== '').slice(0, 5).map((m) => matchCard(m)).join('') || '<p class="small">No results yet.</p>'}</div></div></section>`;
+  $('#app').innerHTML = `<section class="hero"><div class="wrap hero-grid"><div class="panel"><h1>${name}</h1><p>Fixtures, results, group standings and knockout bracket in one clean football website.</p><a class="btn" href="fixtures.html">View Fixtures</a> <a class="btn alt" href="standings.html">View Standings</a><div class="stats"><div class="stat"><b>${teams.length}</b><br><span>Teams</span></div><div class="stat"><b>${settings.groupCount}</b><br><span>Groups</span></div><div class="stat"><b>${settings.qualifyPerGroup}</b><br><span>Qualify / Group</span></div></div></div><div class="panel"><h2>Upcoming Fixtures</h2>${matches.slice(0, 4).map((m) => matchCard(m)).join('')}</div></div></section><section class="section"><div class="wrap"><div class="title"><h2>Latest Results</h2><a href="results.html">View all</a></div><div class="card">${matches.filter((m) => m.homeScore !== '' && m.awayScore !== '').slice(0, 5).map((m) => matchCard(m)).join('') || '<p class="small">No results yet.</p>'}</div></div></section>`;
 }
 
 function renderFixtures() {
@@ -361,6 +361,27 @@ function knockoutWinner(match) {
   return hs > as ? match.home : match.away;
 }
 
+function isKnockoutPendingZero(match) {
+  if (!match || match.round === 'Group Stage') return false;
+  const hs = String(match.homeScore ?? '').trim();
+  const as = String(match.awayScore ?? '').trim();
+
+  // In knockout rounds, 0-0 has no winner. Treat generated 0-0 as pending,
+  // unless it was intentionally created by the deadline auto-draw rule.
+  return hs === '0' && as === '0' && !match.autoDrawApplied && !knockoutWinner(match);
+}
+
+function knockoutDisplayMatchCard(m) {
+  if (!isKnockoutPendingZero(m)) return matchCard(m);
+
+  return `<div class="match fixture-match"><div class="team-name team-home">${escapeHtml(m.home)}</div><div class="match-center"><div class="score vs-pill">vs</div><div class="match-date">${escapeHtml(fixtureScheduleText(m))}</div></div><div class="team-name team-away">${escapeHtml(m.away)}</div></div>`;
+}
+
+function knockoutInputValue(match, side) {
+  if (isKnockoutPendingZero(match)) return '';
+  return side === 'home' ? match.homeScore : match.awayScore;
+}
+
 function nextKnockoutRoundName(round) {
   const idx = KNOCKOUT_ROUNDS.indexOf(round);
   if (idx === -1 || idx >= KNOCKOUT_ROUNDS.length - 1) return '';
@@ -389,7 +410,7 @@ function renderBracket() {
 
   const bracketHtml = rounds.map((round) => {
     const ms = kos.filter((m) => m.round === round);
-    return `<h3 class="group-title">${escapeHtml(round)}</h3><div class="card">${ms.map((m) => matchCard(m)).join('')}</div>`;
+    return `<h3 class="group-title">${escapeHtml(round)}</h3><div class="card">${ms.map((m) => knockoutDisplayMatchCard(m)).join('')}</div>`;
   }).join('');
 
   $('#app').innerHTML = `<section class="section"><div class="wrap"><h2>Knockout Bracket</h2><p class="small">Generate knockout fixtures from Admin after the group stage is completed.</p>${bracketHtml || `<div class="card"><h3>Qualified Teams</h3>${q.map((t) => `<div class="slot">${escapeHtml(t)}</div>`).join('') || '<p class="small">No qualified teams yet.</p>'}<p class="small">No knockout fixtures generated yet.</p></div>`}</div></section>`;
@@ -523,7 +544,7 @@ function showAdminTab(tab) {
 
     const scheduleRows = kos.map((m) => `<tr><td>${escapeHtml(m.round)}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input id="koDate_${m.id}" type="date" value="${escapeHtml((m.date && m.date !== 'TBA') ? m.date : '')}"></td><td><input id="koTime_${m.id}" type="time" value="${escapeHtml((m.time && m.time !== 'TBA') ? m.time : '')}"></td></tr>`).join('');
 
-    const resultRows = kos.map((m) => `<tr><td>${escapeHtml(m.round)}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input class="score-input" id="koHs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(m.homeScore)}"></td><td><input class="score-input" id="koAs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(m.awayScore)}"></td><td>${knockoutWinner(m) ? `<span class="tag">Winner: ${escapeHtml(knockoutWinner(m))}</span>` : '<span class="small">Pending</span>'}</td></tr>`).join('');
+    const resultRows = kos.map((m) => `<tr><td>${escapeHtml(m.round)}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input class="score-input" id="koHs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(knockoutInputValue(m, 'home'))}"></td><td><input class="score-input" id="koAs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(knockoutInputValue(m, 'away'))}"></td><td>${knockoutWinner(m) ? `<span class="tag">Winner: ${escapeHtml(knockoutWinner(m))}</span>` : '<span class="small">Pending</span>'}</td></tr>`).join('');
 
     c.innerHTML = `<h2>Knockout Fixtures</h2><div id="adminMessage"></div><div class="tool-card"><h3>Qualified teams</h3><p class="small">${q.length} team(s) qualified from group standings.</p><div class="card">${q.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join(' ') || '<p class="small">No qualified teams yet.</p>'}</div><div class="admin-actions"><button class="btn" onclick="generateFirstKnockoutRound()">Generate First Knockout Round</button><button class="btn alt" onclick="generateNextKnockoutRound()">Generate Next Round</button><button class="btn danger" onclick="clearKnockoutFixtures()">Clear Knockout Fixtures</button></div></div><br><div class="tool-card"><h3>Knockout deadlines</h3><p class="small">Set deadline date/time for each knockout round. Blank knockout results become 0-0 after that round deadline passes.</p><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Deadline Date</th><th>Deadline Time</th></tr>${deadlineRows}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutDeadlines()">Save Knockout Deadlines</button><button class="btn alt" onclick="applyDeadlineDrawsNow()">Apply Due 0-0 Now</button></div></div><br><div class="tool-card"><h3>Knockout date/time</h3><p class="small">Optional fixture schedule for knockout matches.</p><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Date</th><th>Time</th></tr>${scheduleRows || '<tr><td colspan="4">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutSchedule()">Save Knockout Date/Time</button></div></div><br><div class="tool-card"><h3>Knockout results</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Home</th><th>Away</th><th>Status</th></tr>${resultRows || '<tr><td colspan="5">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutResults()">Save Knockout Results</button></div></div>`;
   }
