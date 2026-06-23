@@ -27,6 +27,7 @@ const defaults = {
     teamsPerGroup: 4,
     resultDeadlineDate: '',
     resultDeadlineTime: '',
+    knockoutDeadlines: {},
     adminPin: ''
   },
   teams: [
@@ -82,15 +83,38 @@ function isResultDeadlinePassed(settings) {
   return Boolean(dt && Date.now() > dt.getTime());
 }
 
+function knockoutDeadlineDateTime(settings, round) {
+  const d = (settings.knockoutDeadlines || {})[round] || {};
+  if (!d.date || !d.time) return null;
+  const dt = new Date(`${d.date}T${d.time}`);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function isKnockoutDeadlinePassed(settings, round) {
+  const dt = knockoutDeadlineDateTime(settings, round);
+  return Boolean(dt && Date.now() > dt.getTime());
+}
+
+function knockoutDeadlineText(settings, round) {
+  const d = (settings.knockoutDeadlines || {})[round] || {};
+  if (!d.date || !d.time) return 'No deadline set';
+  return `${d.date} ${d.time}`;
+}
+
+function matchDeadlinePassed(settings, match) {
+  if (match.round === 'Group Stage') {
+    return isResultDeadlinePassed(settings);
+  }
+  return isKnockoutDeadlinePassed(settings, match.round);
+}
+
 function applyResultDeadlineDefaults() {
   const d = data();
-
-  if (!isResultDeadlinePassed(d.settings)) {
-    return 0;
-  }
-
   let changed = 0;
+
   d.matches = d.matches.map((m) => {
+    if (!matchDeadlinePassed(d.settings, m)) return m;
+
     const missingHome = m.homeScore === '' || m.homeScore === null || m.homeScore === undefined;
     const missingAway = m.awayScore === '' || m.awayScore === null || m.awayScore === undefined;
 
@@ -221,7 +245,7 @@ function renderHome() {
   init('home');
   const { teams, matches, settings } = data();
   const name = escapeHtml(tournamentName(settings));
-  $('#app').innerHTML = `<section class="hero"><div class="wrap hero-grid"><div class="panel"><h1>${name}</h1><p>Fixtures, results, group standings and knockout bracket in one clean football website.</p><a class="btn" href="fixtures.html">View Fixtures</a> <a class="btn alt" href="standings.html">View Standings</a><div class="stats"><div class="stat"><b>${teams.length}</b><br><span>Teams</span></div><div class="stat"><b>${settings.groupCount}</b><br><span>Groups</span></div><div class="stat"><b>${settings.qualifyPerGroup}</b><br><span>Qualify / Group</span></div></div></div><div class="panel"><h2>Upcoming Fixtures</h2>${matches.slice(0, 4).map((m) => matchCard(m)).join('')}</div></div></section><section class="section"><div class="wrap"><div class="title"><h2>Latest Results</h2><a href="results.html">View all</a></div><div class="card">${matches.filter((m) => m.homeScore !== '' && m.awayScore !== '').slice(0, 5).map((m) => matchCard(m)).join('') || '<p class="small">No results yet.</p>'}</div></div></section>`;
+  $('#app').innerHTML = `<section class="hero"><div class="wrap hero-grid"><div class="panel"><h1>${name}</h1><a class="btn" href="fixtures.html">View Fixtures</a> <a class="btn alt" href="standings.html">View Standings</a><div class="stats"><div class="stat"><b>${teams.length}</b><br><span>Teams</span></div><div class="stat"><b>${settings.groupCount}</b><br><span>Groups</span></div><div class="stat"><b>${settings.qualifyPerGroup}</b><br><span>Qualify / Group</span></div></div></div><div class="panel"><h2>Upcoming Fixtures</h2>${matches.slice(0, 4).map((m) => matchCard(m)).join('')}</div></div></section><section class="section"><div class="wrap"><div class="title"><h2>Latest Results</h2><a href="results.html">View all</a></div><div class="card">${matches.filter((m) => m.homeScore !== '' && m.awayScore !== '').slice(0, 5).map((m) => matchCard(m)).join('') || '<p class="small">No results yet.</p>'}</div></div></section>`;
 }
 
 function renderFixtures() {
@@ -286,12 +310,89 @@ function qualified() {
   return out;
 }
 
+const KNOCKOUT_ROUNDS = ['Round of 32', 'Round of 16', 'Quarter Finals', 'Semi Finals', 'Final'];
+
+function roundIndex(round) {
+  const idx = KNOCKOUT_ROUNDS.indexOf(round);
+  return idx === -1 ? 999 : idx;
+}
+
+function isPowerOfTwo(n) {
+  return n >= 2 && (n & (n - 1)) === 0;
+}
+
+function firstKnockoutRoundName(teamCount) {
+  if (teamCount === 32) return 'Round of 32';
+  if (teamCount === 16) return 'Round of 16';
+  if (teamCount === 8) return 'Quarter Finals';
+  if (teamCount === 4) return 'Semi Finals';
+  if (teamCount === 2) return 'Final';
+  return '';
+}
+
+function pairKnockoutTeams(teams) {
+  const pairs = [];
+  for (let i = 0; i < teams.length / 2; i += 1) {
+    pairs.push([teams[i], teams[teams.length - 1 - i]]);
+  }
+  return pairs;
+}
+
+function buildKnockoutRound(teams, round) {
+  return pairKnockoutTeams(teams).map(([home, away], i) => ({
+    id: Date.now() + i,
+    round,
+    group: '',
+    home,
+    away,
+    homeScore: '',
+    awayScore: '',
+    date: '',
+    time: ''
+  }));
+}
+
+function knockoutWinner(match) {
+  if (match.homeScore === '' || match.awayScore === '') return '';
+  const hs = Number(match.homeScore);
+  const as = Number(match.awayScore);
+  if (!Number.isFinite(hs) || !Number.isFinite(as)) return '';
+  if (hs === as) return '';
+  return hs > as ? match.home : match.away;
+}
+
+function nextKnockoutRoundName(round) {
+  const idx = KNOCKOUT_ROUNDS.indexOf(round);
+  if (idx === -1 || idx >= KNOCKOUT_ROUNDS.length - 1) return '';
+  return KNOCKOUT_ROUNDS[idx + 1];
+}
+
+function latestKnockoutRound(matches) {
+  const rounds = [...new Set(matches.filter((m) => m.round !== 'Group Stage').map((m) => m.round))]
+    .sort((a, b) => roundIndex(a) - roundIndex(b));
+  return rounds[rounds.length - 1] || '';
+}
+
+function knockoutRoundListFromMatches(matches) {
+  const used = [...new Set(matches.filter((m) => m.round !== 'Group Stage').map((m) => m.round))];
+  return KNOCKOUT_ROUNDS.filter((r) => used.includes(r));
+}
+
+
 function renderBracket() {
   applyResultDeadlineDefaults();
   init('bracket');
+  const d = data();
   const q = qualified();
-  const rounds = ['Qualified Teams', 'Round of 16', 'Quarter Finals', 'Semi Finals', 'Final'];
-  $('#app').innerHTML = `<section class="section"><div class="wrap"><h2>Knockout Bracket</h2><p class="small">Bracket updates from group standings based on admin qualification settings.</p><div class="bracket">${rounds.map((r, i) => `<div class="round"><h3>${r}</h3>${i === 0 ? (q.map((t) => `<div class="slot">${escapeHtml(t)}</div>`).join('') || '<div class="slot">No qualified teams yet</div>') : '<div class="slot">To be generated</div><div class="slot">To be generated</div>'}</div>`).join('')}</div></div></section>`;
+  const kos = d.matches.filter((m) => m.round !== 'Group Stage');
+  const rounds = knockoutRoundListFromMatches(d.matches);
+
+  const bracketHtml = rounds.map((round) => {
+    const ms = kos.filter((m) => m.round === round);
+    return `<h3 class="group-title">${escapeHtml(round)}</h3><div class="card">${ms.map((m) => matchCard(m)).join('')}</div>`;
+  }).join('');
+
+  $('#app').innerHTML = `<section class="section"><div class="wrap"><h2>Knockout Bracket</h2><p class="small">Generate knockout fixtures from Admin after the group stage is completed.</p>${bracketHtml || `<div class="card"><h3>Qualified Teams</h3>${q.map((t) => `<div class="slot">${escapeHtml(t)}</div>`).join('') || '<p class="small">No qualified teams yet.</p>'}<p class="small">No knockout fixtures generated yet.</p></div>`}</div></section>`;
 }
 
 function renderAdmin() {
@@ -312,7 +413,7 @@ function loginBox() {
 }
 
 function adminDash() {
-  return `<section class="section"><div class="wrap admin-layout"><div class="side panel"><button data-tab="settings" class="active">Tournament Settings</button><button data-tab="teams">Bulk Teams + Groups</button><button data-tab="fixtures">Fixtures</button><button data-tab="results">Fast Result Entry</button><button onclick="sessionStorage.removeItem('efl_admin');location.reload()">Logout</button></div><div class="panel"><div id="adminContent"></div></div></div></section>`;
+  return `<section class="section"><div class="wrap admin-layout"><div class="side panel"><button data-tab="settings" class="active">Tournament Settings</button><button data-tab="teams">Bulk Teams + Groups</button><button data-tab="fixtures">Fixtures</button><button data-tab="results">Fast Result Entry</button><button data-tab="knockout">Knockout Fixtures</button><button onclick="sessionStorage.removeItem('efl_admin');location.reload()">Logout</button></div><div class="panel"><div id="adminContent"></div></div></div></section>`;
 }
 
 function bindAdmin() {
@@ -404,6 +505,29 @@ function showAdminTab(tab) {
 
     c.innerHTML = `<h2>Fast Result Entry</h2><div id="adminMessage"></div><div class="tool-card"><h3>Result filling deadline</h3><p class="small">Optional. After this date and time, any match without a result will automatically become a 0-0 draw. Admin can still edit the result later.</p><div class="form compact"><input id="resultDeadlineDate" type="date" value="${escapeHtml(settings.resultDeadlineDate || '')}"><input id="resultDeadlineTime" type="time" value="${escapeHtml(settings.resultDeadlineTime || '')}"><button class="btn" onclick="saveResultDeadline()">Save Deadline</button><button class="btn alt" onclick="applyDeadlineDrawsNow()">Apply 0-0 Now</button></div><p class="small">${deadlineStatus}</p></div><br><p class="small">Enter all scores on one screen, then click Save All Results. Leave both score boxes blank if the match has not been played yet.</p><div class="table-scroll"><table class="table result-table"><tr><th>Group/Round</th><th>Match</th><th>Home</th><th>Away</th><th>Status</th></tr>${matches.map((m) => `<tr><td>${escapeHtml(m.group || m.round)}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input class="score-input" id="hs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(m.homeScore)}"></td><td><input class="score-input" id="as_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(m.awayScore)}"></td><td>${m.autoDrawApplied ? '<span class="tag">Auto 0-0</span>' : '<span class="small">Manual / pending</span>'}</td></tr>`).join('') || '<tr><td colspan="5">No matches yet. Generate fixtures first.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveAllResults()">Save All Results</button><button class="btn alt" onclick="clearAllScores()">Clear All Scores</button></div>`;
   }
+
+  if (tab === 'knockout') {
+    const q = qualified();
+    const kos = matches.filter((m) => m.round !== 'Group Stage');
+
+    const roundsForDeadline = KNOCKOUT_ROUNDS.filter((round) => {
+      if (round === 'Round of 32') return q.length === 32 || kos.some((m) => m.round === round);
+      if (round === 'Round of 16') return q.length >= 16 || kos.some((m) => m.round === round);
+      return kos.some((m) => m.round === round) || ['Quarter Finals', 'Semi Finals', 'Final'].includes(round);
+    });
+
+    const deadlineRows = roundsForDeadline.map((round, i) => {
+      const saved = (settings.knockoutDeadlines || {})[round] || {};
+      return `<tr><td><b>${escapeHtml(round)}</b><br><span class="small">${escapeHtml(knockoutDeadlineText(settings, round))}</span></td><td><input id="koDeadlineDate_${i}" type="date" value="${escapeHtml(saved.date || '')}"></td><td><input id="koDeadlineTime_${i}" type="time" value="${escapeHtml(saved.time || '')}"></td></tr>`;
+    }).join('');
+
+    const scheduleRows = kos.map((m) => `<tr><td>${escapeHtml(m.round)}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input id="koDate_${m.id}" type="date" value="${escapeHtml((m.date && m.date !== 'TBA') ? m.date : '')}"></td><td><input id="koTime_${m.id}" type="time" value="${escapeHtml((m.time && m.time !== 'TBA') ? m.time : '')}"></td></tr>`).join('');
+
+    const resultRows = kos.map((m) => `<tr><td>${escapeHtml(m.round)}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input class="score-input" id="koHs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(m.homeScore)}"></td><td><input class="score-input" id="koAs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(m.awayScore)}"></td><td>${knockoutWinner(m) ? `<span class="tag">Winner: ${escapeHtml(knockoutWinner(m))}</span>` : '<span class="small">Pending</span>'}</td></tr>`).join('');
+
+    c.innerHTML = `<h2>Knockout Fixtures</h2><div id="adminMessage"></div><div class="tool-card"><h3>Qualified teams</h3><p class="small">${q.length} team(s) qualified from group standings.</p><div class="card">${q.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join(' ') || '<p class="small">No qualified teams yet.</p>'}</div><div class="admin-actions"><button class="btn" onclick="generateFirstKnockoutRound()">Generate First Knockout Round</button><button class="btn alt" onclick="generateNextKnockoutRound()">Generate Next Round</button><button class="btn danger" onclick="clearKnockoutFixtures()">Clear Knockout Fixtures</button></div></div><br><div class="tool-card"><h3>Knockout deadlines</h3><p class="small">Set deadline date/time for each knockout round. Blank knockout results become 0-0 after that round deadline passes.</p><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Deadline Date</th><th>Deadline Time</th></tr>${deadlineRows}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutDeadlines()">Save Knockout Deadlines</button><button class="btn alt" onclick="applyDeadlineDrawsNow()">Apply Due 0-0 Now</button></div></div><br><div class="tool-card"><h3>Knockout date/time</h3><p class="small">Optional fixture schedule for knockout matches.</p><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Date</th><th>Time</th></tr>${scheduleRows || '<tr><td colspan="4">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutSchedule()">Save Knockout Date/Time</button></div></div><br><div class="tool-card"><h3>Knockout results</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Home</th><th>Away</th><th>Status</th></tr>${resultRows || '<tr><td colspan="5">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutResults()">Save Knockout Results</button></div></div>`;
+  }
+
 }
 
 function parseTeamNames(raw) {
@@ -441,6 +565,132 @@ function createGroupedTeamsFromNames(names, settings, preserveIds = false, exist
     group: GROUPS[index % groupCount]
   }));
 }
+
+
+window.generateFirstKnockoutRound = () => {
+  const d = data();
+  const q = qualified();
+
+  if (!isPowerOfTwo(q.length)) {
+    return adminMessage(`Qualified team count is ${q.length}. Use 2, 4, 8, 16, or 32 teams for automatic knockout generation.`, 'bad');
+  }
+
+  const round = firstKnockoutRoundName(q.length);
+  if (!round) return adminMessage('Cannot decide knockout round from qualified team count.', 'bad');
+
+  const existingKnockout = d.matches.some((m) => m.round !== 'Group Stage');
+  if (existingKnockout && !confirm('Existing knockout fixtures will be replaced. Continue?')) return;
+
+  const groupMatches = d.matches.filter((m) => m.round === 'Group Stage');
+  const firstRound = buildKnockoutRound(q, round);
+  setData({ matches: [...groupMatches, ...firstRound] });
+  showAdminTab('knockout');
+  adminMessage(`${round} generated with ${firstRound.length} match(es).`, 'ok');
+};
+
+window.generateNextKnockoutRound = () => {
+  const d = data();
+  const kos = d.matches.filter((m) => m.round !== 'Group Stage');
+  if (!kos.length) return adminMessage('Generate first knockout round first.', 'bad');
+
+  const currentRound = latestKnockoutRound(d.matches);
+  const nextRound = nextKnockoutRoundName(currentRound);
+  if (!nextRound) return adminMessage('No next round available.', 'bad');
+
+  const currentMatches = kos.filter((m) => m.round === currentRound);
+  const winners = currentMatches.map((m) => knockoutWinner(m));
+
+  if (winners.some((w) => !w)) {
+    return adminMessage(`Complete all ${currentRound} results first. Draws cannot advance automatically.`, 'bad');
+  }
+
+  if (d.matches.some((m) => m.round === nextRound) && !confirm(`${nextRound} already exists. Replace it and later rounds?`)) return;
+
+  const keepRounds = d.matches.filter((m) => m.round === 'Group Stage' || roundIndex(m.round) <= roundIndex(currentRound));
+  const nextMatches = buildKnockoutRound(winners, nextRound);
+  setData({ matches: [...keepRounds, ...nextMatches] });
+  showAdminTab('knockout');
+  adminMessage(`${nextRound} generated.`, 'ok');
+};
+
+window.clearKnockoutFixtures = () => {
+  if (!confirm('Clear all knockout fixtures, results, and schedules? Group stage stays.')) return;
+  const d = data();
+  d.matches = d.matches.filter((m) => m.round === 'Group Stage');
+  setData({ matches: d.matches });
+  showAdminTab('knockout');
+  adminMessage('Knockout fixtures cleared.', 'ok');
+};
+
+window.saveKnockoutDeadlines = () => {
+  const d = data();
+  const q = qualified();
+
+  const rounds = KNOCKOUT_ROUNDS.filter((round) => {
+    if (round === 'Round of 32') return q.length === 32 || d.matches.some((m) => m.round === round);
+    if (round === 'Round of 16') return q.length >= 16 || d.matches.some((m) => m.round === round);
+    return d.matches.some((m) => m.round === round) || ['Quarter Finals', 'Semi Finals', 'Final'].includes(round);
+  });
+
+  const deadlines = { ...(d.settings.knockoutDeadlines || {}) };
+
+  for (let i = 0; i < rounds.length; i += 1) {
+    const round = rounds[i];
+    const date = ($(`#koDeadlineDate_${i}`)?.value || '').trim();
+    const time = ($(`#koDeadlineTime_${i}`)?.value || '').trim();
+
+    if ((date && !time) || (!date && time)) {
+      return adminMessage(`Set both date and time for ${round}, or leave both blank.`, 'bad');
+    }
+
+    if (date && time) deadlines[round] = { date, time };
+    if (!date && !time) delete deadlines[round];
+  }
+
+  d.settings.knockoutDeadlines = deadlines;
+  setData({ settings: d.settings });
+
+  const changed = applyResultDeadlineDefaults();
+  showAdminTab('knockout');
+  adminMessage(changed > 0 ? `Deadlines saved. ${changed} due blank result(s) became 0-0.` : 'Knockout deadlines saved.', 'ok');
+};
+
+window.saveKnockoutSchedule = () => {
+  const d = data();
+  d.matches = d.matches.map((m) => {
+    if (m.round === 'Group Stage') return m;
+    return { ...m, date: $(`#koDate_${m.id}`)?.value || '', time: $(`#koTime_${m.id}`)?.value || '' };
+  });
+  setData({ matches: d.matches });
+  showAdminTab('knockout');
+  adminMessage('Knockout date/time saved.', 'ok');
+};
+
+window.saveKnockoutResults = () => {
+  const d = data();
+  const invalid = [];
+
+  d.matches = d.matches.map((m) => {
+    if (m.round === 'Group Stage') return m;
+
+    const hs = $(`#koHs_${m.id}`)?.value.trim() ?? m.homeScore;
+    const as = $(`#koAs_${m.id}`)?.value.trim() ?? m.awayScore;
+
+    if ((hs === '' && as !== '') || (hs !== '' && as === '')) {
+      invalid.push(`${m.home} vs ${m.away}`);
+      return m;
+    }
+
+    return { ...m, homeScore: hs, awayScore: as, autoDrawApplied: false, autoDrawAppliedAt: '' };
+  });
+
+  if (invalid.length) return adminMessage(`Some knockout matches have only one score filled: ${invalid.slice(0, 3).join(', ')}`, 'bad');
+
+  setData({ matches: d.matches });
+  showAdminTab('knockout');
+  adminMessage('Knockout results saved.', 'ok');
+};
+
 
 window.saveSettings = () => {
   const s = data().settings;
@@ -646,23 +896,11 @@ window.saveResultDeadline = () => {
 };
 
 window.applyDeadlineDrawsNow = () => {
-  const d = data();
-
-  if (!resultDeadlineDateTime(d.settings)) {
-    return adminMessage('Set the result deadline date and time first.', 'bad');
-  }
-
-  if (!isResultDeadlinePassed(d.settings)) {
-    return adminMessage('The deadline has not passed yet. 0-0 auto-draw will apply after the deadline.', 'bad');
-  }
-
   const changed = applyResultDeadlineDefaults();
-  showAdminTab('results');
-
   if (changed > 0) {
-    adminMessage(`${changed} blank match result(s) were auto-recorded as 0-0 draws. Admin can still edit them later.`, 'ok');
+    adminMessage(`${changed} due blank match result(s) were auto-recorded as 0-0. Admin can still edit them later.`, 'ok');
   } else {
-    adminMessage('No blank results needed auto-draw. Existing results were kept.', 'ok');
+    adminMessage('No due blank results found. Check group or knockout deadlines.', 'ok');
   }
 };
 
