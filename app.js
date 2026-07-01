@@ -1851,7 +1851,7 @@ function renderTopScorers() {
 }
 
 const eflOriginalShowAdminTab = showAdminTab;
-function showAdminTab(tab) {
+showAdminTab = function(tab) {
   if (tab !== 'teams') return eflOriginalShowAdminTab(tab);
 
   const c = $('#adminContent');
@@ -1862,7 +1862,7 @@ function showAdminTab(tab) {
     : `<select onchange="updateTeam(${t.id},'group',this.value)">${groupOptions(t.group, settings.groupCount)}</select>`;
 
   c.innerHTML = `<h2>Teams + Logo Upload</h2><div id="adminMessage"></div><div class="admin-tools"><div class="tool-card"><h3>Paste teams at once</h3><p class="small">Paste one team per line. You can upload team logos after creating the teams.</p><textarea id="bulkTeams" rows="10" placeholder="Example:\nDortmund\nWolve\nFrankfurt\nSpur"></textarea><div class="check-row"><label><input id="replaceTeams" type="checkbox" checked> Replace current teams</label><label><input id="autoFixtures" type="checkbox" checked> Generate fixtures after creating teams</label></div><button class="btn" onclick="bulkCreateTeams()">Create Teams Automatically</button><button class="btn alt" onclick="shuffleExistingTeams()">Shuffle Existing Teams</button></div><div class="tool-card"><h3>Single team add</h3><div class="form compact"><input id="teamName" placeholder="Team name"><select id="teamGroup" ${isUclNewFormat(settings) ? 'disabled' : ''}>${groupOptions('A', settings.groupCount)}</select><button class="btn" onclick="addTeam()">Add Team</button></div><hr><p class="small"><b>Current:</b> ${teams.length}/${settings.teamLimit || 24} teams</p><p class="small"><b>Mode:</b> ${isUclNewFormat(settings) ? 'UCL League Phase' : escapeHtml(groupedSummary || 'Group Stage')}</p><button class="btn danger" onclick="clearTeamsAndMatches()">Clear Teams + Fixtures</button></div></div><br><h3>Team List</h3><p class="small">Upload each team logo here. Logos are saved inside browser storage and will show on Teams, Standings and Top Scorers pages.</p><div class="table-scroll"><table class="table team-admin-table"><tr><th>Logo</th><th>Team</th><th>Group / Phase</th><th>Upload Logo</th><th>Action</th></tr>${teams.map((t) => `<tr><td>${teamLogoHtml(t.name, 'admin-team-logo')}</td><td><input value="${escapeHtml(t.name)}" onchange="updateTeam(${t.id},'name',this.value)"></td><td>${groupCell(t)}</td><td><input type="file" accept="image/*" onchange="handleTeamLogoUpload(${t.id}, this)"><br><button class="btn alt mini-btn" onclick="clearTeamLogo(${t.id})">Clear Logo</button></td><td><button onclick="deleteTeam(${t.id})">Delete</button></td></tr>`).join('') || '<tr><td colspan="5">No teams yet.</td></tr>'}</table></div>`;
-}
+};
 
 window.handleTeamLogoUpload = (id, input) => {
   const file = input.files && input.files[0];
