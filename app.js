@@ -1835,7 +1835,9 @@ function renderStandings() {
   const rows = standings();
 
   if (isUclNewFormat(settings)) {
-    $('#app').innerHTML = `<section class="section"><div class="wrap"><div class="title"><h2>League Phase Standings</h2><span class="tag">Top 8 direct • 9-24 playoff</span></div><div class="table-scroll"><table class="table standings-table"><tr><th>Rank</th><th>Team</th><th>Status</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th></tr>${rows.map((r, i) => `<tr><td><b>#${i + 1}</b></td><td>${teamNameLogoHtml(r.team)}</td><td>${rankLabel(i)}</td><td>${r.P}</td><td>${r.W}</td><td>${r.D}</td><td>${r.L}</td><td>${r.GF}</td><td>${r.GA}</td><td>${r.GD}</td><td><b>${r.Pts}</b></td></tr>`).join('')}</table></div></div></section>`;
+    const rankClass = (i) => i < 8 ? 'is-direct' : i < 24 ? 'is-playoff' : 'is-eliminated';
+    const rowClass = (i) => i < 8 ? 'is-direct-row' : i < 24 ? 'is-playoff-row' : 'is-eliminated-row';
+    $('#app').innerHTML = `<section class="section"><div class="wrap"><div class="title"><h2>League Phase Standings</h2><span class="tag">Top 8 direct • 9-24 playoff</span></div><div class="table-scroll"><table class="table standings-table ucl-standings"><tr><th>#</th><th>Team</th><th>Status</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th></tr>${rows.map((r, i) => `<tr class="${rowClass(i)}"><td><span class="standings-rank ${rankClass(i)}">${i + 1}</span></td><td>${teamNameLogoHtml(r.team, 'team-name-logo standings-team')}</td><td>${rankLabel(i)}</td><td>${r.P}</td><td>${r.W}</td><td>${r.D}</td><td>${r.L}</td><td>${r.GF}</td><td>${r.GA}</td><td>${r.GD}</td><td><b>${r.Pts}</b></td></tr>`).join('')}</table></div></div></section>`;
     return;
   }
 
