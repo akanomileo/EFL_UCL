@@ -1202,9 +1202,9 @@ function renderHome() {
   const leader = scoring[0];
   const upcoming = matches.filter((m) => m.homeScore === '' || m.awayScore === '').slice(0, 4);
   const completed = matches.filter(hasNumericScore).slice(-5).reverse();
-  const phaseText = isUclNewFormat(settings) ? '24-team UCL format: League Phase → Playoff → Round of 16 → Final' : 'Group stage and knockout bracket';
+  const phaseText = isUclNewFormat(settings) ? '' : 'Group stage and knockout bracket';
 
-  $('#app').innerHTML = `<section class="hero"><div class="wrap hero-grid"><div class="panel"><h1>${escapeHtml(tournamentName(settings))}</h1><p>${escapeHtml(phaseText)}</p><a class="btn" href="fixtures.html">View Fixtures</a> <a class="btn alt" href="standings.html">View Standings</a><div class="stats"><div class="stat"><b>${teams.length}</b><br><span>Teams</span></div><div class="stat"><b>${settings.leaguePhaseMatchesPerTeam || 4}</b><br><span>League Matches / Team</span></div><div class="stat"><b>Best of 2</b><br><span>Knockout System</span></div></div></div><div class="panel"><h2>Upcoming Fixtures</h2>${upcoming.map((m) => matchCard(m)).join('') || '<p class="small">No upcoming fixtures yet.</p>'}</div></div></section><section class="section"><div class="wrap"><div class="title"><h2>Top Scoring Team</h2><a href="topscorers.html">View full list</a></div>${leader ? `<div class="topscorer-showcase"><div class="leader-card"><div class="leader-logo-wrap"><div class="leader-logo logo-placeholder">${escapeHtml(teamInitials(leader.team))}</div></div><div class="leader-label">Leading team</div><h3>${escapeHtml(leader.team)}</h3><div class="leader-goals">${leader.GF}</div><p class="small">Goals scored</p></div><div class="card topscorer-side-list">${scoring.slice(0, 5).map((row) => `<div class="topscorer-item ${row.rank === 1 ? 'is-leading' : ''}"><div class="topscorer-rank">#${row.rank}</div><div class="topscorer-team"><b>${escapeHtml(row.team)}</b><span class="small">P ${row.P} • GD ${row.GD}</span></div><div class="topscorer-goals">${row.GF}<span>goals</span></div></div>`).join('')}</div></div>` : '<div class="card"><p class="small">No top scoring data yet.</p></div>'}</div></section><section class="section"><div class="wrap"><div class="title"><h2>Latest Results</h2><a href="results.html">View all</a></div><div class="card">${completed.map((m) => matchCard(m)).join('') || '<p class="small">No results yet.</p>'}</div></div></section>`;
+  $('#app').innerHTML = `<section class="hero"><div class="wrap hero-grid"><div class="panel"><h1>${escapeHtml(tournamentName(settings))}</h1>${phaseText ? `<p>${escapeHtml(phaseText)}</p>` : ''}<a class="btn" href="fixtures.html">View Fixtures</a> <a class="btn alt" href="standings.html">View Standings</a><div class="stats"><div class="stat"><b>${teams.length}</b><br><span>Teams</span></div><div class="stat"><b>${settings.leaguePhaseMatchesPerTeam || 4}</b><br><span>League Matches / Team</span></div><div class="stat"><b>2 Leg</b><br><span>Knockout System</span></div></div></div><div class="panel"><h2>Upcoming Fixtures</h2>${upcoming.map((m) => matchCard(m)).join('') || '<p class="small">No upcoming fixtures yet.</p>'}</div></div></section><section class="section"><div class="wrap"><div class="title"><h2>Top Scoring Team</h2><a href="topscorers.html">View full list</a></div>${leader ? `<div class="topscorer-showcase"><div class="leader-card"><div class="leader-logo-wrap"><div class="leader-logo logo-placeholder">${escapeHtml(teamInitials(leader.team))}</div></div><div class="leader-label">Leading team</div><h3>${escapeHtml(leader.team)}</h3><div class="leader-goals">${leader.GF}</div><p class="small">Goals scored</p></div><div class="card topscorer-side-list">${scoring.slice(0, 5).map((row) => `<div class="topscorer-item ${row.rank === 1 ? 'is-leading' : ''}"><div class="topscorer-rank">#${row.rank}</div><div class="topscorer-team"><b>${escapeHtml(row.team)}</b><span class="small">P ${row.P} • GD ${row.GD}</span></div><div class="topscorer-goals">${row.GF}<span>goals</span></div></div>`).join('')}</div></div>` : '<div class="card"><p class="small">No top scoring data yet.</p></div>'}</div></section><section class="section"><div class="wrap"><div class="title"><h2>Latest Results</h2><a href="results.html">View all</a></div><div class="card">${completed.map((m) => matchCard(m)).join('') || '<p class="small">No results yet.</p>'}</div></div></section>`;
 }
 
 function renderFixtures() {
@@ -1418,7 +1418,7 @@ function renderBracket() {
     return `<h3 class="group-title">${escapeHtml(round)}</h3><div class="bracket-tie-grid">${ties.map((tie) => `<div class="card bracket-tie"><div class="tie-head"><b>${escapeHtml(tie.tieHome)}</b><span>vs</span><b>${escapeHtml(tie.tieAway)}</b></div>${tie.legs.map((m) => matchCard(m)).join('')}<div class="tie-status">${knockoutTieStatusHtml(tie)}</div></div>`).join('')}</div>`;
   }).join('');
 
-  $('#app').innerHTML = `<section class="section"><div class="wrap"><h2>Knockout Bracket</h2><p class="small">Knockout rounds use Best of 2 aggregate system. If a knockout tie has missing result after its deadline, both teams are eliminated.</p>${bracketHtml || `<div class="card"><h3>Qualified / League Phase Teams</h3>${q.map((t) => `<div class="slot">${escapeHtml(t)}</div>`).join('') || '<p class="small">No qualified teams yet.</p>'}<p class="small">No knockout fixtures generated yet.</p></div>`}</div></section>`;
+  $('#app').innerHTML = `<section class="section"><div class="wrap"><h2>Knockout Bracket</h2><p class="small">Knockout rounds use 2 Leg aggregate system. If a knockout tie has missing result after its deadline, both teams are eliminated.</p>${bracketHtml || `<div class="card"><h3>Qualified / League Phase Teams</h3>${q.map((t) => `<div class="slot">${escapeHtml(t)}</div>`).join('') || '<p class="small">No qualified teams yet.</p>'}<p class="small">No knockout fixtures generated yet.</p></div>`}</div></section>`;
 }
 
 function buildUclLeaguePhaseFixtures(teams, settings) {
@@ -1461,7 +1461,7 @@ function buildGroupFixtures(teams, settings) {
 }
 
 function adminDash() {
-  return `<section class="section"><div class="wrap admin-layout"><div class="side panel"><button data-tab="settings" class="active">Tournament Settings</button><button data-tab="teams">Teams</button><button data-tab="fixtures">Fixtures</button><button data-tab="results">League Results</button><button data-tab="knockout">Knockout Best of 2</button><button onclick="sessionStorage.removeItem('efl_admin');location.reload()">Logout</button></div><div class="panel"><div id="adminContent"></div></div></div></section>`;
+  return `<section class="section"><div class="wrap admin-layout"><div class="side panel"><button data-tab="settings" class="active">Tournament Settings</button><button data-tab="teams">Teams</button><button data-tab="fixtures">Fixtures</button><button data-tab="results">League Results</button><button data-tab="knockout">Knockout 2 Leg</button><button onclick="sessionStorage.removeItem('efl_admin');location.reload()">Logout</button></div><div class="panel"><div id="adminContent"></div></div></div></section>`;
 }
 
 function showAdminTab(tab) {
@@ -1470,7 +1470,7 @@ function showAdminTab(tab) {
   if (!c) return;
 
   if (tab === 'settings') {
-    c.innerHTML = `<h2>Tournament Settings</h2><div id="adminMessage"></div><div class="form"><label>Tournament name <input id="tournamentName" value="${escapeHtml(tournamentName(settings))}" placeholder="Example: EFL Champions League"></label><label>Format <select id="tournamentMode"><option value="ucl_new" ${(settings.tournamentMode || 'ucl_new') === 'ucl_new' ? 'selected' : ''}>New UCL Format / 24 Teams</option><option value="groups" ${settings.tournamentMode === 'groups' ? 'selected' : ''}>Classic Groups</option></select></label><label>Team limit <input id="teamLimit" type="number" min="2" max="48" value="${settings.teamLimit || 24}"></label><label>League phase matches per team <input id="leaguePhaseMatchesPerTeam" type="number" min="1" max="8" value="${settings.leaguePhaseMatchesPerTeam || 4}"></label><label>Number of groups <input id="groupCount" type="number" min="1" max="12" value="${settings.groupCount}"></label><label>Teams per group <input id="teamsPerGroup" type="number" min="2" max="8" value="${settings.teamsPerGroup}"></label><label>Teams qualify per group <input id="qualifyPerGroup" type="number" min="1" max="8" value="${settings.qualifyPerGroup}"></label><label>Admin PIN <input id="adminPin" type="password" value="${escapeHtml(settings.adminPin)}" placeholder="Set admin PIN"></label><button class="btn" onclick="saveSettings()">Save Settings</button><button class="btn alt" type="button" onclick="applyUclDefaults()">Apply UCL 24-Team Defaults</button></div><p class="small">New UCL format: 24-team league phase. Top 8 go direct to Round of 16. Rank 9-24 enter Knockout Playoff. Knockout is Best of 2 aggregate.</p>`;
+    c.innerHTML = `<h2>Tournament Settings</h2><div id="adminMessage"></div><div class="form"><label>Tournament name <input id="tournamentName" value="${escapeHtml(tournamentName(settings))}" placeholder="Example: EFL Champions League"></label><label>Format <select id="tournamentMode"><option value="ucl_new" ${(settings.tournamentMode || 'ucl_new') === 'ucl_new' ? 'selected' : ''}>New UCL Format / 24 Teams</option><option value="groups" ${settings.tournamentMode === 'groups' ? 'selected' : ''}>Classic Groups</option></select></label><label>Team limit <input id="teamLimit" type="number" min="2" max="48" value="${settings.teamLimit || 24}"></label><label>League phase matches per team <input id="leaguePhaseMatchesPerTeam" type="number" min="1" max="8" value="${settings.leaguePhaseMatchesPerTeam || 4}"></label><label>Number of groups <input id="groupCount" type="number" min="1" max="12" value="${settings.groupCount}"></label><label>Teams per group <input id="teamsPerGroup" type="number" min="2" max="8" value="${settings.teamsPerGroup}"></label><label>Teams qualify per group <input id="qualifyPerGroup" type="number" min="1" max="8" value="${settings.qualifyPerGroup}"></label><label>Admin PIN <input id="adminPin" type="password" value="${escapeHtml(settings.adminPin)}" placeholder="Set admin PIN"></label><button class="btn" onclick="saveSettings()">Save Settings</button><button class="btn alt" type="button" onclick="applyUclDefaults()">Apply UCL 24-Team Defaults</button></div><p class="small">New UCL format: 24-team league phase. Top 8 go direct to Round of 16. Rank 9-24 enter Knockout Playoff. Knockout is 2 Leg aggregate.</p>`;
   }
 
   if (tab === 'teams') {
@@ -1491,7 +1491,7 @@ function showAdminTab(tab) {
       const rows = matches.filter((m) => (m.group || m.round || 'Other') === g).map((m) => `<tr><td>${escapeHtml(m.round)}${m.leg ? ` • Leg ${m.leg}` : ''}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input id="date_${m.id}" type="date" value="${escapeHtml((m.date && m.date !== 'TBA') ? m.date : '')}"></td><td><input id="time_${m.id}" type="time" value="${escapeHtml((m.time && m.time !== 'TBA') ? m.time : '')}"></td></tr>`).join('');
       return `<h3 class="group-title">${title}</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Date</th><th>Time</th></tr>${rows}</table></div>`;
     }).join('');
-    c.innerHTML = `<h2>Fixtures + Optional Schedule</h2><div id="adminMessage"></div><div class="admin-actions"><button class="btn" onclick="generateFixtures()">${isUclNewFormat(settings) ? 'Generate UCL League Phase Fixtures' : 'Generate Group Fixtures'}</button><button class="btn alt" onclick="clearFixtureSchedule()">Clear Date/Time Only</button><button class="btn danger" onclick="clearFixtures()">Clear Fixtures</button></div><p class="small">UCL league phase uses ${settings.leaguePhaseMatchesPerTeam || 4} match(es) per team. Knockout uses Best of 2 aggregate legs.</p><div class="tool-card"><h3>Quick schedule apply</h3><div class="form compact"><input id="bulkFixtureDate" type="date"><input id="bulkFixtureTime" type="time"><button class="btn" onclick="applyBulkFixtureSchedule()">Apply to All Fixtures</button></div></div><br>${fixtureTables || '<div class="card">No fixtures yet. Generate fixtures first.</div>'}<div class="admin-actions"><button class="btn" onclick="saveFixtureSchedule()">Save Fixture Date/Time</button></div>`;
+    c.innerHTML = `<h2>Fixtures + Optional Schedule</h2><div id="adminMessage"></div><div class="admin-actions"><button class="btn" onclick="generateFixtures()">${isUclNewFormat(settings) ? 'Generate UCL League Phase Fixtures' : 'Generate Group Fixtures'}</button><button class="btn alt" onclick="clearFixtureSchedule()">Clear Date/Time Only</button><button class="btn danger" onclick="clearFixtures()">Clear Fixtures</button></div><p class="small">UCL league phase uses ${settings.leaguePhaseMatchesPerTeam || 4} match(es) per team. Knockout uses 2 Leg aggregate score.</p><div class="tool-card"><h3>Quick schedule apply</h3><div class="form compact"><input id="bulkFixtureDate" type="date"><input id="bulkFixtureTime" type="time"><button class="btn" onclick="applyBulkFixtureSchedule()">Apply to All Fixtures</button></div></div><br>${fixtureTables || '<div class="card">No fixtures yet. Generate fixtures first.</div>'}<div class="admin-actions"><button class="btn" onclick="saveFixtureSchedule()">Save Fixture Date/Time</button></div>`;
   }
 
   if (tab === 'results') {
@@ -1513,7 +1513,7 @@ function showAdminTab(tab) {
     const scheduleRows = kos.map((m) => `<tr><td>${escapeHtml(m.round)}${m.leg ? ` • Leg ${m.leg}` : ''}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input id="koDate_${m.id}" type="date" value="${escapeHtml((m.date && m.date !== 'TBA') ? m.date : '')}"></td><td><input id="koTime_${m.id}" type="time" value="${escapeHtml((m.time && m.time !== 'TBA') ? m.time : '')}"></td></tr>`).join('');
     const ties = groupKnockoutTies(kos);
     const resultRows = ties.map((tie) => tie.legs.map((m) => `<tr><td>${escapeHtml(m.round)}${m.leg ? `<br><span class="small">Leg ${m.leg}</span>` : ''}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input class="score-input" id="koHs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(knockoutInputValue(m, 'home'))}" ${m.autoEliminated || m.autoBye ? 'disabled' : ''}></td><td><input class="score-input" id="koAs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(knockoutInputValue(m, 'away'))}" ${m.autoEliminated || m.autoBye ? 'disabled' : ''}></td><td>${knockoutTieStatusHtml(tie)}</td></tr>`).join('')).join('');
-    c.innerHTML = `<h2>Knockout Best of 2</h2><div id="adminMessage"></div><div class="tool-card"><h3>UCL knockout format</h3><p class="small">${escapeHtml(qText)}</p><p class="small"><b>Best of 2:</b> every knockout tie has Leg 1 and Leg 2. Aggregate score decides the winner.</p><p class="small"><b>Deadline rule:</b> if a knockout tie still has missing result after its round deadline, both teams are eliminated automatically. When the next round is generated, remaining teams can receive BYE advancement if needed.</p><div class="admin-actions"><button class="btn" onclick="generateFirstKnockoutRound()">Generate UCL Playoff</button><button class="btn alt" onclick="generateNextKnockoutRound()">Generate Next Round</button><button class="btn danger" onclick="clearKnockoutFixtures()">Clear Knockout Fixtures</button></div></div><br><div class="tool-card"><h3>Knockout deadlines</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Deadline Date</th><th>Deadline Time</th></tr>${deadlineRows}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutDeadlines()">Save Knockout Deadlines</button><button class="btn alt" onclick="applyDeadlineDrawsNow()">Apply Due Rules Now</button></div></div><br><div class="tool-card"><h3>Knockout date/time</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Date</th><th>Time</th></tr>${scheduleRows || '<tr><td colspan="4">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutSchedule()">Save Knockout Date/Time</button></div></div><br><div class="tool-card"><h3>Knockout results</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Home</th><th>Away</th><th>Tie Status</th></tr>${resultRows || '<tr><td colspan="5">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutResults()">Save Knockout Results</button></div></div>`;
+    c.innerHTML = `<h2>Knockout 2 Leg</h2><div id="adminMessage"></div><div class="tool-card"><h3>UCL knockout format</h3><p class="small">${escapeHtml(qText)}</p><p class="small"><b>2 Leg:</b> every knockout tie has Leg 1 and Leg 2. Aggregate score decides the winner.</p><p class="small"><b>Deadline rule:</b> if a knockout tie still has missing result after its round deadline, both teams are eliminated automatically. When the next round is generated, remaining teams can receive BYE advancement if needed.</p><div class="admin-actions"><button class="btn" onclick="generateFirstKnockoutRound()">Generate UCL Playoff</button><button class="btn alt" onclick="generateNextKnockoutRound()">Generate Next Round</button><button class="btn danger" onclick="clearKnockoutFixtures()">Clear Knockout Fixtures</button></div></div><br><div class="tool-card"><h3>Knockout deadlines</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Deadline Date</th><th>Deadline Time</th></tr>${deadlineRows}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutDeadlines()">Save Knockout Deadlines</button><button class="btn alt" onclick="applyDeadlineDrawsNow()">Apply Due Rules Now</button></div></div><br><div class="tool-card"><h3>Knockout date/time</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Date</th><th>Time</th></tr>${scheduleRows || '<tr><td colspan="4">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutSchedule()">Save Knockout Date/Time</button></div></div><br><div class="tool-card"><h3>Knockout results</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Home</th><th>Away</th><th>Tie Status</th></tr>${resultRows || '<tr><td colspan="5">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutResults()">Save Knockout Results</button></div></div>`;
   }
 }
 
@@ -1647,7 +1647,7 @@ window.generateFirstKnockoutRound = () => {
     const firstRound = buildKnockoutRound(playoff, 'Knockout Playoff');
     setData({ matches: [...leagueMatches, ...firstRound] });
     showAdminTab('knockout');
-    adminMessage(`Knockout Playoff generated: ${firstRound.length / 2} best-of-2 tie(s).`, 'ok');
+    adminMessage(`Knockout Playoff generated: ${firstRound.length / 2} 2-leg tie(s).`, 'ok');
     return;
   }
 
@@ -1771,4 +1771,137 @@ window.saveKnockoutSchedule = () => {
   setData({ matches: d.matches });
   showAdminTab('knockout');
   adminMessage('Knockout date/time saved.', 'ok');
+};
+
+/* =========================================================
+   CLEAN UCL HOME + 2 LEG WORDING + TEAM LOGO UPLOAD UPGRADE
+   Added by ChatGPT for EFL UCL website.
+   ========================================================= */
+
+function teamByName(name) {
+  return (data().teams || []).find((t) => String(t.name).toLowerCase() === String(name).toLowerCase()) || null;
+}
+
+function teamLogoUrl(teamName) {
+  const t = teamByName(teamName);
+  return (t && t.logo) ? t.logo : '';
+}
+
+function teamLogoHtml(teamName, className = 'team-logo') {
+  const logo = teamLogoUrl(teamName);
+  const safeName = escapeHtml(teamName);
+  if (logo) return `<img class="${className}" src="${escapeHtml(logo)}" alt="${safeName} logo">`;
+  return `<div class="${className} logo-fallback">${escapeHtml(teamInitials(teamName))}</div>`;
+}
+
+function teamNameLogoHtml(teamName, className = 'team-name-logo') {
+  return `<span class="${className}">${teamLogoHtml(teamName, 'team-logo-sm')}<b>${escapeHtml(teamName)}</b></span>`;
+}
+
+function renderHome() {
+  applyResultDeadlineDefaults();
+  init('home');
+  const { teams, matches, settings } = data();
+  const scoring = topScoringTeams();
+  const leader = scoring[0];
+  const upcoming = matches.filter((m) => m.homeScore === '' || m.awayScore === '').slice(0, 4);
+  const completed = matches.filter(hasNumericScore).slice(-5).reverse();
+
+  $('#app').innerHTML = `<section class="hero"><div class="wrap hero-grid"><div class="panel"><h1>${escapeHtml(tournamentName(settings))}</h1><a class="btn" href="fixtures.html">View Fixtures</a> <a class="btn alt" href="standings.html">View Standings</a><div class="stats"><div class="stat"><b>${teams.length}</b><br><span>Teams</span></div><div class="stat"><b>${settings.leaguePhaseMatchesPerTeam || 4}</b><br><span>League Matches / Team</span></div><div class="stat"><b>2 Leg</b><br><span>Knockout System</span></div></div></div><div class="panel"><h2>Upcoming Fixtures</h2>${upcoming.map((m) => matchCard(m)).join('') || '<p class="small">No upcoming fixtures yet.</p>'}</div></div></section><section class="section"><div class="wrap"><div class="title"><h2>Top Scoring Team</h2><a href="topscorers.html">View full list</a></div>${leader ? `<div class="topscorer-showcase"><div class="leader-card"><div class="leader-logo-wrap">${teamLogoHtml(leader.team, 'leader-logo')}</div><div class="leader-label">Leading team</div><h3>${escapeHtml(leader.team)}</h3><div class="leader-goals">${leader.GF}</div><p class="small">Goals scored</p></div><div class="card topscorer-side-list">${scoring.slice(0, 5).map((row) => `<div class="topscorer-item ${row.rank === 1 ? 'is-leading' : ''}"><div class="topscorer-rank">#${row.rank}</div><div class="topscorer-team with-logo">${teamNameLogoHtml(row.team)}<span class="small">P ${row.P} • GD ${row.GD}</span></div><div class="topscorer-goals">${row.GF}<span>goals</span></div></div>`).join('')}</div></div>` : '<div class="card"><p class="small">No top scoring data yet.</p></div>'}</div></section><section class="section"><div class="wrap"><div class="title"><h2>Latest Results</h2><a href="results.html">View all</a></div><div class="card">${completed.map((m) => matchCard(m)).join('') || '<p class="small">No results yet.</p>'}</div></div></section>`;
+}
+
+function renderTeams() {
+  init('teams');
+  const { teams, settings } = data();
+  if (isUclNewFormat(settings)) {
+    $('#app').innerHTML = `<section class="section"><div class="wrap"><div class="title"><h2>Teams</h2><span class="tag">${teams.length}/${settings.teamLimit || 24} teams</span></div><div class="grid">${teams.map((t, i) => `<div class="card team-card">${teamLogoHtml(t.name, 'team-card-logo')}<h3>${escapeHtml(t.name)}</h3><span class="tag">League Phase #${i + 1}</span></div>`).join('') || '<p>No teams yet.</p>'}</div></div></section>`;
+    return;
+  }
+
+  const groups = [...new Set(teams.map((t) => t.group))].sort();
+  $('#app').innerHTML = `<section class="section"><div class="wrap"><h2>Teams</h2>${groups.map((g) => `<h3 class="group-title">Group ${escapeHtml(g)}</h3><div class="grid">${teams.filter((t) => t.group === g).map((t) => `<div class="card team-card">${teamLogoHtml(t.name, 'team-card-logo')}<h3>${escapeHtml(t.name)}</h3><span class="tag">Group ${escapeHtml(t.group)}</span></div>`).join('')}</div>`).join('') || '<p>No teams yet.</p>'}</div></section>`;
+}
+
+function renderStandings() {
+  applyResultDeadlineDefaults();
+  init('standings');
+  const { settings } = data();
+  const rows = standings();
+
+  if (isUclNewFormat(settings)) {
+    $('#app').innerHTML = `<section class="section"><div class="wrap"><div class="title"><h2>League Phase Standings</h2><span class="tag">Top 8 direct • 9-24 playoff</span></div><div class="table-scroll"><table class="table standings-table"><tr><th>Rank</th><th>Team</th><th>Status</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th></tr>${rows.map((r, i) => `<tr><td><b>#${i + 1}</b></td><td>${teamNameLogoHtml(r.team)}</td><td>${rankLabel(i)}</td><td>${r.P}</td><td>${r.W}</td><td>${r.D}</td><td>${r.L}</td><td>${r.GF}</td><td>${r.GA}</td><td>${r.GD}</td><td><b>${r.Pts}</b></td></tr>`).join('')}</table></div></div></section>`;
+    return;
+  }
+
+  const groups = [...new Set(rows.map((r) => r.group))];
+  $('#app').innerHTML = `<section class="section"><div class="wrap"><h2>Group Standings</h2>${groups.map((g) => `<h3 class="group-title">Group ${escapeHtml(g)}</h3><table class="table standings-table"><tr><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th></tr>${rows.filter((r) => r.group === g).map((r) => `<tr><td>${teamNameLogoHtml(r.team)}</td><td>${r.P}</td><td>${r.W}</td><td>${r.D}</td><td>${r.L}</td><td>${r.GF}</td><td>${r.GA}</td><td>${r.GD}</td><td><b>${r.Pts}</b></td></tr>`).join('')}</table>`).join('') || '<p>No standings yet.</p>'}</div></section>`;
+}
+
+function renderTopScorers() {
+  applyResultDeadlineDefaults();
+  init('topscorers');
+  const rows = topScoringTeams();
+  const leader = rows[0];
+  if (!leader) {
+    $('#app').innerHTML = `<section class="section"><div class="wrap"><div class="title"><h2>Top Scoring Teams</h2></div><div class="card"><p class="small">No teams yet.</p></div></div></section>`;
+    return;
+  }
+
+  $('#app').innerHTML = `<section class="section"><div class="wrap"><div class="title"><h2>Top Scoring Teams</h2><span class="tag">Goals from league phase and knockout</span></div><div class="topscorer-showcase"><div class="leader-card"><div class="leader-logo-wrap">${teamLogoHtml(leader.team, 'leader-logo')}</div><div class="leader-label">Leading team</div><div class="leader-rank">#${leader.rank}</div><h3>${escapeHtml(leader.team)}</h3><div class="leader-goals">${leader.GF}</div><p class="small">Goals scored</p><div class="leader-meta"><span class="tag">Matches: ${leader.P}</span><span class="tag">GD: ${leader.GD}</span></div></div><div class="card topscorer-side-list">${rows.slice(0, 5).map((row) => `<div class="topscorer-item ${row.rank === 1 ? 'is-leading' : ''}"><div class="topscorer-rank">#${row.rank}</div><div class="topscorer-team with-logo">${teamNameLogoHtml(row.team)}<span class="small">P ${row.P} • GD ${row.GD}</span></div><div class="topscorer-goals">${row.GF}<span>goals</span></div></div>`).join('')}</div></div><div class="table-scroll" style="margin-top:22px"><table class="table top-scorer-table"><tr><th>Rank</th><th>Team</th><th>Goals</th><th>Matches</th><th>GD</th><th>Pts</th></tr>${rows.map((row) => `<tr><td><b>#${row.rank}</b></td><td>${teamNameLogoHtml(row.team)}</td><td>${row.GF}</td><td>${row.P}</td><td>${row.GD}</td><td>${row.Pts}</td></tr>`).join('')}</table></div></div></section>`;
+}
+
+const eflOriginalShowAdminTab = showAdminTab;
+function showAdminTab(tab) {
+  if (tab !== 'teams') return eflOriginalShowAdminTab(tab);
+
+  const c = $('#adminContent');
+  const { teams, settings } = data();
+  const groupedSummary = GROUPS.slice(0, settings.groupCount).map((g) => `${g}: ${teams.filter((t) => t.group === g).length}`).join(' • ');
+  const groupCell = (t) => isUclNewFormat(settings)
+    ? `<span class="tag">League Phase</span>`
+    : `<select onchange="updateTeam(${t.id},'group',this.value)">${groupOptions(t.group, settings.groupCount)}</select>`;
+
+  c.innerHTML = `<h2>Teams + Logo Upload</h2><div id="adminMessage"></div><div class="admin-tools"><div class="tool-card"><h3>Paste teams at once</h3><p class="small">Paste one team per line. You can upload team logos after creating the teams.</p><textarea id="bulkTeams" rows="10" placeholder="Example:\nDortmund\nWolve\nFrankfurt\nSpur"></textarea><div class="check-row"><label><input id="replaceTeams" type="checkbox" checked> Replace current teams</label><label><input id="autoFixtures" type="checkbox" checked> Generate fixtures after creating teams</label></div><button class="btn" onclick="bulkCreateTeams()">Create Teams Automatically</button><button class="btn alt" onclick="shuffleExistingTeams()">Shuffle Existing Teams</button></div><div class="tool-card"><h3>Single team add</h3><div class="form compact"><input id="teamName" placeholder="Team name"><select id="teamGroup" ${isUclNewFormat(settings) ? 'disabled' : ''}>${groupOptions('A', settings.groupCount)}</select><button class="btn" onclick="addTeam()">Add Team</button></div><hr><p class="small"><b>Current:</b> ${teams.length}/${settings.teamLimit || 24} teams</p><p class="small"><b>Mode:</b> ${isUclNewFormat(settings) ? 'UCL League Phase' : escapeHtml(groupedSummary || 'Group Stage')}</p><button class="btn danger" onclick="clearTeamsAndMatches()">Clear Teams + Fixtures</button></div></div><br><h3>Team List</h3><p class="small">Upload each team logo here. Logos are saved inside browser storage and will show on Teams, Standings and Top Scorers pages.</p><div class="table-scroll"><table class="table team-admin-table"><tr><th>Logo</th><th>Team</th><th>Group / Phase</th><th>Upload Logo</th><th>Action</th></tr>${teams.map((t) => `<tr><td>${teamLogoHtml(t.name, 'admin-team-logo')}</td><td><input value="${escapeHtml(t.name)}" onchange="updateTeam(${t.id},'name',this.value)"></td><td>${groupCell(t)}</td><td><input type="file" accept="image/*" onchange="handleTeamLogoUpload(${t.id}, this)"><br><button class="btn alt mini-btn" onclick="clearTeamLogo(${t.id})">Clear Logo</button></td><td><button onclick="deleteTeam(${t.id})">Delete</button></td></tr>`).join('') || '<tr><td colspan="5">No teams yet.</td></tr>'}</table></div>`;
+}
+
+window.handleTeamLogoUpload = (id, input) => {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) return alert('Please choose an image file.');
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const size = 180;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, size, size);
+      const scale = Math.min(size / img.width, size / img.height);
+      const w = img.width * scale;
+      const h = img.height * scale;
+      const x = (size - w) / 2;
+      const y = (size - h) / 2;
+      ctx.drawImage(img, x, y, w, h);
+      const logo = canvas.toDataURL('image/png');
+      const d = data();
+      d.teams = d.teams.map((t) => (t.id === id ? { ...t, logo } : t));
+      setData({ teams: d.teams });
+      showAdminTab('teams');
+      adminMessage('Team logo uploaded.', 'ok');
+    };
+    img.onerror = () => alert('Could not read this image file.');
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+};
+
+window.clearTeamLogo = (id) => {
+  const d = data();
+  d.teams = d.teams.map((t) => (t.id === id ? { ...t, logo: '' } : t));
+  setData({ teams: d.teams });
+  showAdminTab('teams');
+  adminMessage('Team logo removed.', 'ok');
 };
