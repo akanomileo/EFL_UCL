@@ -108,8 +108,11 @@ function matchDeadlinePassed(settings, match) {
   return isKnockoutDeadlinePassed(settings, match.round);
 }
 
-function applyResultDeadlineDefaults() {
-  const d = data();
+function applyResultDeadlineDefaults(options = {}) {
+  // Safety fix: never mutate results on public page load or normal render.
+  // Deadline processing only runs when Admin clicks the manual button.
+  if (!options || options.manual !== true) return 0;
+const d = data();
   let changed = 0;
 
   d.matches = d.matches.map((m) => {
@@ -270,7 +273,7 @@ function renderResults() {
   const d = data();
   const ms = d.matches.filter((m) => m.homeScore !== '' && m.awayScore !== '');
   const deadlineStatus = isResultDeadlinePassed(d.settings)
-    ? `Result deadline passed: ${escapeHtml(resultDeadlineText(d.settings))}. Blank results are auto-recorded as 0-0 draws.`
+    ? `Result deadline passed: ${escapeHtml(resultDeadlineText(d.settings))}. Blank results stay pending until Admin manually applies deadline rules.`
     : `Result deadline: ${escapeHtml(resultDeadlineText(d.settings))}`;
 
   const groups = [...new Set(ms.map((m) => m.group || m.round || 'Other'))]
@@ -546,7 +549,7 @@ function showAdminTab(tab) {
 
     const resultRows = kos.map((m) => `<tr><td>${escapeHtml(m.round)}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input class="score-input" id="koHs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(knockoutInputValue(m, 'home'))}"></td><td><input class="score-input" id="koAs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(knockoutInputValue(m, 'away'))}"></td><td>${knockoutWinner(m) ? `<span class="tag">Winner: ${escapeHtml(knockoutWinner(m))}</span>` : '<span class="small">Pending</span>'}</td></tr>`).join('');
 
-    c.innerHTML = `<h2>Knockout Fixtures</h2><div id="adminMessage"></div><div class="tool-card"><h3>Qualified teams</h3><p class="small">${q.length} team(s) qualified from group standings.</p><div class="card">${q.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join(' ') || '<p class="small">No qualified teams yet.</p>'}</div><div class="admin-actions"><button class="btn" onclick="generateFirstKnockoutRound()">Generate First Knockout Round</button><button class="btn alt" onclick="generateNextKnockoutRound()">Generate Next Round</button><button class="btn danger" onclick="clearKnockoutFixtures()">Clear Knockout Fixtures</button></div></div><br><div class="tool-card"><h3>Knockout deadlines</h3><p class="small">Set deadline date/time for each knockout round. Blank knockout results become 0-0 after that round deadline passes.</p><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Deadline Date</th><th>Deadline Time</th></tr>${deadlineRows}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutDeadlines()">Save Knockout Deadlines</button><button class="btn alt" onclick="applyDeadlineDrawsNow()">Apply Due 0-0 Now</button></div></div><br><div class="tool-card"><h3>Knockout date/time</h3><p class="small">Optional fixture schedule for knockout matches.</p><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Date</th><th>Time</th></tr>${scheduleRows || '<tr><td colspan="4">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutSchedule()">Save Knockout Date/Time</button></div></div><br><div class="tool-card"><h3>Knockout results</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Home</th><th>Away</th><th>Status</th></tr>${resultRows || '<tr><td colspan="5">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutResults()">Save Knockout Results</button></div></div>`;
+    c.innerHTML = `<h2>Knockout Fixtures</h2><div id="adminMessage"></div><div class="tool-card"><h3>Qualified teams</h3><p class="small">${q.length} team(s) qualified from group standings.</p><div class="card">${q.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join(' ') || '<p class="small">No qualified teams yet.</p>'}</div><div class="admin-actions"><button class="btn" onclick="generateFirstKnockoutRound()">Generate First Knockout Round</button><button class="btn alt" onclick="generateNextKnockoutRound()">Generate Next Round</button><button class="btn danger" onclick="clearKnockoutFixtures()">Clear Knockout Fixtures</button></div></div><br><div class="tool-card"><h3>Knockout deadlines</h3><p class="small">Set deadline date/time for each knockout round. Knockout deadline rules are processed only when Admin clicks Apply Due Rules Now.</p><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Deadline Date</th><th>Deadline Time</th></tr>${deadlineRows}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutDeadlines()">Save Knockout Deadlines</button><button class="btn alt" onclick="applyDeadlineDrawsNow()">Apply Due 0-0 Now</button><button class="btn alt" onclick="undoAutoZeroDraws()">Undo Auto 0-0</button></div></div><br><div class="tool-card"><h3>Knockout date/time</h3><p class="small">Optional fixture schedule for knockout matches.</p><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Date</th><th>Time</th></tr>${scheduleRows || '<tr><td colspan="4">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutSchedule()">Save Knockout Date/Time</button></div></div><br><div class="tool-card"><h3>Knockout results</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Home</th><th>Away</th><th>Status</th></tr>${resultRows || '<tr><td colspan="5">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutResults()">Save Knockout Results</button></div></div>`;
   }
 
 }
@@ -673,7 +676,7 @@ window.saveKnockoutDeadlines = () => {
 
   const changed = applyResultDeadlineDefaults();
   showAdminTab('knockout');
-  adminMessage(changed > 0 ? `Deadlines saved. ${changed} due blank result(s) became 0-0.` : 'Knockout deadlines saved.', 'ok');
+  adminMessage(changed > 0 ? `Deadlines saved. No blank results were changed automatically.` : 'Knockout deadlines saved.', 'ok');
 };
 
 window.saveKnockoutSchedule = () => {
@@ -910,14 +913,14 @@ window.saveResultDeadline = () => {
   showAdminTab('results');
 
   if (changed > 0) {
-    adminMessage(`Deadline saved. ${changed} blank match result(s) were auto-recorded as 0-0 draws.`, 'ok');
+    adminMessage(`Deadline saved. No blank results were changed automatically.`, 'ok');
   } else {
     adminMessage('Result deadline saved successfully.', 'ok');
   }
 };
 
 window.applyDeadlineDrawsNow = () => {
-  const changed = applyResultDeadlineDefaults();
+  const changed = applyResultDeadlineDefaults({ manual: true });
   if (changed > 0) {
     adminMessage(`${changed} due blank match result(s) were auto-recorded as 0-0. Admin can still edit them later.`, 'ok');
   } else {
@@ -1134,8 +1137,11 @@ function rerenderCurrentPage() {
   else if (p === 'admin.html') renderAdmin();
 }
 
-function applyResultDeadlineDefaults() {
-  const d = data();
+function applyResultDeadlineDefaults(options = {}) {
+  // Safety fix: never mutate results on public page load or normal render.
+  // Deadline processing only runs when Admin clicks the manual button.
+  if (!options || options.manual !== true) return 0;
+const d = data();
   let changed = 0;
 
   // Group / league phase: blank scores become 0-0 after the league deadline.
@@ -1497,8 +1503,8 @@ function showAdminTab(tab) {
   if (tab === 'results') {
     const leagueMatches = matches.filter((m) => isLeaguePhaseMatch(m));
     const deadlinePassed = isResultDeadlinePassed(settings);
-    const deadlineStatus = deadlinePassed ? `Deadline passed: ${escapeHtml(resultDeadlineText(settings))}. Blank league phase results become 0-0.` : `Deadline: ${escapeHtml(resultDeadlineText(settings))}`;
-    c.innerHTML = `<h2>League Result Entry</h2><div id="adminMessage"></div><div class="tool-card"><h3>League result deadline</h3><p class="small">After this date/time, blank league phase results become 0-0. Knockout blank results are handled in the Knockout tab and can eliminate both teams.</p><div class="form compact"><input id="resultDeadlineDate" type="date" value="${escapeHtml(settings.resultDeadlineDate || '')}"><input id="resultDeadlineTime" type="time" value="${escapeHtml(settings.resultDeadlineTime || '')}"><button class="btn" onclick="saveResultDeadline()">Save Deadline</button><button class="btn alt" onclick="applyDeadlineDrawsNow()">Apply Due Rules Now</button></div><p class="small">${deadlineStatus}</p></div><br><div class="table-scroll"><table class="table result-table"><tr><th>Round</th><th>Match</th><th>Home</th><th>Away</th><th>Status</th></tr>${leagueMatches.map((m) => `<tr><td>${escapeHtml(m.group || m.round)}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input class="score-input" id="hs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(m.homeScore)}"></td><td><input class="score-input" id="as_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(m.awayScore)}"></td><td>${m.autoDrawApplied ? '<span class="tag">Auto 0-0</span>' : '<span class="small">Manual / pending</span>'}</td></tr>`).join('') || '<tr><td colspan="5">No league fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveAllResults()">Save League Results</button><button class="btn alt" onclick="clearAllScores()">Clear League Scores</button></div>`;
+    const deadlineStatus = deadlinePassed ? `Deadline passed: ${escapeHtml(resultDeadlineText(settings))}. Blank league phase results stay pending until Admin clicks Apply Due Rules Now.` : `Deadline: ${escapeHtml(resultDeadlineText(settings))}`;
+    c.innerHTML = `<h2>League Result Entry</h2><div id="adminMessage"></div><div class="tool-card"><h3>League result deadline</h3><p class="small">After this date/time, blank league phase results stay pending. Admin must click Apply Due Rules Now to process deadline rules. Knockout blank results are handled in the Knockout tab.</p><div class="form compact"><input id="resultDeadlineDate" type="date" value="${escapeHtml(settings.resultDeadlineDate || '')}"><input id="resultDeadlineTime" type="time" value="${escapeHtml(settings.resultDeadlineTime || '')}"><button class="btn" onclick="saveResultDeadline()">Save Deadline</button><button class="btn alt" onclick="applyDeadlineDrawsNow()">Apply Due Rules Now</button><button class="btn alt" onclick="undoAutoZeroDraws()">Undo Auto 0-0</button></div><p class="small">${deadlineStatus}</p></div><br><div class="table-scroll"><table class="table result-table"><tr><th>Round</th><th>Match</th><th>Home</th><th>Away</th><th>Status</th></tr>${leagueMatches.map((m) => `<tr><td>${escapeHtml(m.group || m.round)}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input class="score-input" id="hs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(m.homeScore)}"></td><td><input class="score-input" id="as_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(m.awayScore)}"></td><td>${m.autoDrawApplied ? '<span class="tag">Auto 0-0</span>' : '<span class="small">Manual / pending</span>'}</td></tr>`).join('') || '<tr><td colspan="5">No league fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveAllResults()">Save League Results</button><button class="btn alt" onclick="clearAllScores()">Clear League Scores</button></div>`;
   }
 
   if (tab === 'knockout') {
@@ -1513,7 +1519,7 @@ function showAdminTab(tab) {
     const scheduleRows = kos.map((m) => `<tr><td>${escapeHtml(m.round)}${m.leg ? ` • Leg ${m.leg}` : ''}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input id="koDate_${m.id}" type="date" value="${escapeHtml((m.date && m.date !== 'TBA') ? m.date : '')}"></td><td><input id="koTime_${m.id}" type="time" value="${escapeHtml((m.time && m.time !== 'TBA') ? m.time : '')}"></td></tr>`).join('');
     const ties = groupKnockoutTies(kos);
     const resultRows = ties.map((tie) => tie.legs.map((m) => `<tr><td>${escapeHtml(m.round)}${m.leg ? `<br><span class="small">Leg ${m.leg}</span>` : ''}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input class="score-input" id="koHs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(knockoutInputValue(m, 'home'))}" ${m.autoEliminated || m.autoBye ? 'disabled' : ''}></td><td><input class="score-input" id="koAs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(knockoutInputValue(m, 'away'))}" ${m.autoEliminated || m.autoBye ? 'disabled' : ''}></td><td>${knockoutTieStatusHtml(tie)}</td></tr>`).join('')).join('');
-    c.innerHTML = `<h2>Knockout 2 Leg</h2><div id="adminMessage"></div><div class="tool-card"><h3>UCL knockout format</h3><p class="small">${escapeHtml(qText)}</p><p class="small"><b>2 Leg:</b> every knockout tie has Leg 1 and Leg 2. Aggregate score decides the winner.</p><p class="small"><b>Deadline rule:</b> if a knockout tie still has missing result after its round deadline, both teams are eliminated automatically. When the next round is generated, remaining teams can receive BYE advancement if needed.</p><div class="admin-actions"><button class="btn" onclick="generateFirstKnockoutRound()">Generate UCL Playoff</button><button class="btn alt" onclick="generateNextKnockoutRound()">Generate Next Round</button><button class="btn danger" onclick="clearKnockoutFixtures()">Clear Knockout Fixtures</button></div></div><br><div class="tool-card"><h3>Knockout deadlines</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Deadline Date</th><th>Deadline Time</th></tr>${deadlineRows}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutDeadlines()">Save Knockout Deadlines</button><button class="btn alt" onclick="applyDeadlineDrawsNow()">Apply Due Rules Now</button></div></div><br><div class="tool-card"><h3>Knockout date/time</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Date</th><th>Time</th></tr>${scheduleRows || '<tr><td colspan="4">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutSchedule()">Save Knockout Date/Time</button></div></div><br><div class="tool-card"><h3>Knockout results</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Home</th><th>Away</th><th>Tie Status</th></tr>${resultRows || '<tr><td colspan="5">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutResults()">Save Knockout Results</button></div></div>`;
+    c.innerHTML = `<h2>Knockout 2 Leg</h2><div id="adminMessage"></div><div class="tool-card"><h3>UCL knockout format</h3><p class="small">${escapeHtml(qText)}</p><p class="small"><b>2 Leg:</b> every knockout tie has Leg 1 and Leg 2. Aggregate score decides the winner.</p><p class="small"><b>Deadline rule:</b> missing knockout results are not changed on public page load. Admin can click Apply Due Rules Now after the deadline; then unresolved ties are eliminated and remaining teams can receive BYE advancement if needed.</p><div class="admin-actions"><button class="btn" onclick="generateFirstKnockoutRound()">Generate UCL Playoff</button><button class="btn alt" onclick="generateNextKnockoutRound()">Generate Next Round</button><button class="btn danger" onclick="clearKnockoutFixtures()">Clear Knockout Fixtures</button></div></div><br><div class="tool-card"><h3>Knockout deadlines</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Deadline Date</th><th>Deadline Time</th></tr>${deadlineRows}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutDeadlines()">Save Knockout Deadlines</button><button class="btn alt" onclick="applyDeadlineDrawsNow()">Apply Due Rules Now</button><button class="btn alt" onclick="undoAutoZeroDraws()">Undo Auto 0-0</button></div></div><br><div class="tool-card"><h3>Knockout date/time</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Date</th><th>Time</th></tr>${scheduleRows || '<tr><td colspan="4">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutSchedule()">Save Knockout Date/Time</button></div></div><br><div class="tool-card"><h3>Knockout results</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Home</th><th>Away</th><th>Tie Status</th></tr>${resultRows || '<tr><td colspan="5">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutResults()">Save Knockout Results</button></div></div>`;
   }
 }
 
@@ -1718,7 +1724,7 @@ window.saveKnockoutDeadlines = () => {
   setData({ settings: d.settings });
   const changed = applyResultDeadlineDefaults();
   showAdminTab('knockout');
-  adminMessage(changed > 0 ? `Deadlines saved. ${changed} knockout leg(s) were marked eliminated due missing results.` : 'Knockout deadlines saved.', 'ok');
+  adminMessage(changed > 0 ? `Knockout deadlines saved. No knockout results were changed automatically.` : 'Knockout deadlines saved.', 'ok');
 };
 
 window.saveKnockoutResults = () => {
@@ -1742,7 +1748,7 @@ window.saveKnockoutResults = () => {
 };
 
 window.applyDeadlineDrawsNow = () => {
-  const changed = applyResultDeadlineDefaults();
+  const changed = applyResultDeadlineDefaults({ manual: true });
   adminMessage(changed > 0 ? `${changed} due blank result(s) processed by deadline rules.` : 'No due blank results found.', 'ok');
 };
 
@@ -1904,4 +1910,33 @@ window.clearTeamLogo = (id) => {
   setData({ teams: d.teams });
   showAdminTab('teams');
   adminMessage('Team logo removed.', 'ok');
+};
+
+
+/* ==================== AUTO 0-0 PUBLIC VISIT FIX ====================
+   This patch prevents normal visitors from triggering deadline result changes.
+   Admin must manually click "Apply Due Rules Now" to process due blank results.
+   "Undo Auto 0-0" restores previous auto-generated 0-0 league scores to pending.
+==================================================================== */
+window.undoAutoZeroDraws = () => {
+  const d = data();
+  let changed = 0;
+  d.matches = d.matches.map((m) => {
+    if (m.autoDrawApplied && String(m.homeScore) === '0' && String(m.awayScore) === '0') {
+      changed += 1;
+      return {
+        ...m,
+        homeScore: '',
+        awayScore: '',
+        autoDrawApplied: false,
+        autoDrawAppliedAt: ''
+      };
+    }
+    return m;
+  });
+  setData({ matches: d.matches });
+  if (typeof showAdminTab === 'function') showAdminTab('results');
+  if (typeof adminMessage === 'function') {
+    adminMessage(changed > 0 ? `${changed} auto 0-0 result(s) were restored to pending.` : 'No auto 0-0 results found to undo.', 'ok');
+  }
 };
