@@ -49,11 +49,96 @@ const defaults = {
 };
 
 function data() {
-  return {
-    settings: { ...defaults.settings, ...read('efl_settings', defaults.settings) },
-    teams: read('efl_teams', defaults.teams),
-    matches: read('efl_matches', defaults.matches)
-  };
+  const settings = { ...defaults.settings, ...read('efl_settings', defaults.settings) };
+  const teams = read('efl_teams', defaults.teams);
+  const storedMatches = read('efl_matches', defaults.matches);
+  const normalizedFinals = normalizeFinalMatches(storedMatches);
+
+  // Backward compatibility: old packages may already contain a two-leg Final.
+  // Consolidate it once into a single final fixture and sync the corrected data.
+  if (normalizedFinals.changed) save('efl_matches', normalizedFinals.matches);
+
+  return { settings, teams, matches: normalizedFinals.matches };
+}
+
+function normalizeFinalMatches(matches) {
+  const list = Array.isArray(matches) ? matches : [];
+  const output = [];
+  const finalGroups = new Map();
+  let changed = false;
+
+  list.forEach((match) => {
+    if (!match || match.round !== 'Final') {
+      output.push(match);
+      return;
+    }
+
+    const a = match.tieHome || match.home || '';
+    const b = match.tieAway || match.away || '';
+    const key = match.tieId || `Final|${a}|${b}`;
+    if (!finalGroups.has(key)) finalGroups.set(key, []);
+    finalGroups.get(key).push(match);
+  });
+
+  finalGroups.forEach((legs, key) => {
+    const sorted = [...legs].sort((a, b) => (Number(a.leg) || 1) - (Number(b.leg) || 1));
+    const first = sorted[0];
+    const a = first.tieHome || first.home || '';
+    const b = first.tieAway || first.away || '';
+    const alreadySingle = sorted.length === 1 && !first.leg && first.singleLeg === true;
+
+    if (alreadySingle) {
+      output.push(first);
+      return;
+    }
+
+    changed = true;
+    let homeScore = '';
+    let awayScore = '';
+    const complete = sorted.every((m) => m.homeScore !== '' && m.awayScore !== '' && Number.isFinite(Number(m.homeScore)) && Number.isFinite(Number(m.awayScore)));
+
+    if (complete) {
+      let aGoals = 0;
+      let bGoals = 0;
+      sorted.forEach((m) => {
+        const hs = Number(m.homeScore);
+        const as = Number(m.awayScore);
+        if (m.home === a) {
+          aGoals += hs;
+          bGoals += as;
+        } else {
+          bGoals += hs;
+          aGoals += as;
+        }
+      });
+      homeScore = String(aGoals);
+      awayScore = String(bGoals);
+    }
+
+    const scheduled = sorted.find((m) => m.date || m.time) || first;
+    const consolidated = {
+      ...first,
+      id: first.id,
+      tieId: first.tieId || key,
+      tieHome: a,
+      tieAway: b,
+      round: 'Final',
+      group: 'Final',
+      home: a,
+      away: b,
+      homeScore,
+      awayScore,
+      date: scheduled.date || '',
+      time: scheduled.time || '',
+      singleLeg: true,
+      autoBye: sorted.some((m) => m.autoBye),
+      autoEliminated: sorted.some((m) => m.autoEliminated)
+    };
+    delete consolidated.leg;
+    output.push(consolidated);
+  });
+
+  return { matches: output, changed };
 }
 
 function tournamentName(settings) {
@@ -1182,7 +1267,18 @@ const d = data();
   return changed;
 }
 
-function matchCard(m, editable = false) {
+function fixtureDeadlineDetails(settings, match) {
+  const s = settings || data().settings;
+  if (isLeaguePhaseMatch(match)) {
+    const text = resultDeadlineText(s);
+    return { text, isSet: Boolean(resultDeadlineDateTime(s)), passed: isResultDeadlinePassed(s) };
+  }
+
+  const text = knockoutDeadlineText(s, match.round);
+  return { text, isSet: Boolean(knockoutDeadlineDateTime(s, match.round)), passed: isKnockoutDeadlinePassed(s, match.round) };
+}
+
+function matchCard(m, editable = false, showDeadline = false, deadlineSettings = null) {
   const isPending = m.homeScore === '' || m.awayScore === '';
   let score = isPending ? 'vs' : `${m.homeScore} - ${m.awayScore}`;
   let scoreClass = isPending ? 'score vs-pill' : 'score score-result';
@@ -1197,7 +1293,14 @@ function matchCard(m, editable = false) {
   }
 
   const legText = m.leg ? `<div class="match-leg">Leg ${m.leg}</div>` : '';
-  return `<div class="match fixture-match"><div class="team-name team-home">${escapeHtml(m.home)}</div><div class="match-center"><div class="${scoreClass}">${escapeHtml(score)}</div>${legText}<div class="match-date">${escapeHtml(fixtureScheduleText(m))}</div></div><div class="team-name team-away">${escapeHtml(m.away)}</div>${editable ? `<div class="match-edit"><button class="btn" onclick="editResult(${m.id})">Edit</button></div>` : ''}</div>`;
+  let deadlineHtml = '';
+  if (showDeadline) {
+    const deadline = fixtureDeadlineDetails(deadlineSettings || data().settings, m);
+    const label = deadline.isSet ? `Deadline: ${deadline.text}` : deadline.text;
+    deadlineHtml = `<div class="fixture-deadline ${deadline.passed ? 'is-passed' : ''}">${escapeHtml(label)}</div>`;
+  }
+
+  return `<div class="match fixture-match"><div class="team-name team-home">${escapeHtml(m.home)}</div><div class="match-center"><div class="${scoreClass}">${escapeHtml(score)}</div>${legText}<div class="match-date">${escapeHtml(fixtureScheduleText(m))}</div>${deadlineHtml}</div><div class="team-name team-away">${escapeHtml(m.away)}</div>${editable ? `<div class="match-edit"><button class="btn" onclick="editResult(${m.id})">Edit</button></div>` : ''}</div>`;
 }
 
 function renderHome() {
@@ -1210,20 +1313,21 @@ function renderHome() {
   const completed = matches.filter(hasNumericScore).slice(-5).reverse();
   const phaseText = isUclNewFormat(settings) ? '' : 'Group stage and knockout bracket';
 
-  $('#app').innerHTML = `<section class="hero"><div class="wrap hero-grid"><div class="panel"><h1>${escapeHtml(tournamentName(settings))}</h1>${phaseText ? `<p>${escapeHtml(phaseText)}</p>` : ''}<a class="btn" href="fixtures.html">View Fixtures</a> <a class="btn alt" href="standings.html">View Standings</a><div class="stats"><div class="stat"><b>${teams.length}</b><br><span>Teams</span></div><div class="stat"><b>${settings.leaguePhaseMatchesPerTeam || 4}</b><br><span>League Matches / Team</span></div><div class="stat"><b>2 Leg</b><br><span>Knockout System</span></div></div></div><div class="panel"><h2>Upcoming Fixtures</h2>${upcoming.map((m) => matchCard(m)).join('') || '<p class="small">No upcoming fixtures yet.</p>'}</div></div></section><section class="section"><div class="wrap"><div class="title"><h2>Top Scoring Team</h2><a href="topscorers.html">View full list</a></div>${leader ? `<div class="topscorer-showcase"><div class="leader-card"><div class="leader-logo-wrap"><div class="leader-logo logo-placeholder">${escapeHtml(teamInitials(leader.team))}</div></div><div class="leader-label">Leading team</div><h3>${escapeHtml(leader.team)}</h3><div class="leader-goals">${leader.GF}</div><p class="small">Goals scored</p></div><div class="card topscorer-side-list">${scoring.slice(0, 5).map((row) => `<div class="topscorer-item ${row.rank === 1 ? 'is-leading' : ''}"><div class="topscorer-rank">#${row.rank}</div><div class="topscorer-team"><b>${escapeHtml(row.team)}</b><span class="small">P ${row.P} • GD ${row.GD}</span></div><div class="topscorer-goals">${row.GF}<span>goals</span></div></div>`).join('')}</div></div>` : '<div class="card"><p class="small">No top scoring data yet.</p></div>'}</div></section><section class="section"><div class="wrap"><div class="title"><h2>Latest Results</h2><a href="results.html">View all</a></div><div class="card">${completed.map((m) => matchCard(m)).join('') || '<p class="small">No results yet.</p>'}</div></div></section>`;
+  $('#app').innerHTML = `<section class="hero"><div class="wrap hero-grid"><div class="panel"><h1>${escapeHtml(tournamentName(settings))}</h1>${phaseText ? `<p>${escapeHtml(phaseText)}</p>` : ''}<a class="btn" href="fixtures.html">View Fixtures</a> <a class="btn alt" href="standings.html">View Standings</a><div class="stats"><div class="stat"><b>${teams.length}</b><br><span>Teams</span></div><div class="stat"><b>${settings.leaguePhaseMatchesPerTeam || 4}</b><br><span>League Matches / Team</span></div><div class="stat"><b>2 → 1 Leg</b><br><span>Knockout / Final</span></div></div></div><div class="panel"><h2>Upcoming Fixtures</h2>${upcoming.map((m) => matchCard(m)).join('') || '<p class="small">No upcoming fixtures yet.</p>'}</div></div></section><section class="section"><div class="wrap"><div class="title"><h2>Top Scoring Team</h2><a href="topscorers.html">View full list</a></div>${leader ? `<div class="topscorer-showcase"><div class="leader-card"><div class="leader-logo-wrap"><div class="leader-logo logo-placeholder">${escapeHtml(teamInitials(leader.team))}</div></div><div class="leader-label">Leading team</div><h3>${escapeHtml(leader.team)}</h3><div class="leader-goals">${leader.GF}</div><p class="small">Goals scored</p></div><div class="card topscorer-side-list">${scoring.slice(0, 5).map((row) => `<div class="topscorer-item ${row.rank === 1 ? 'is-leading' : ''}"><div class="topscorer-rank">#${row.rank}</div><div class="topscorer-team"><b>${escapeHtml(row.team)}</b><span class="small">P ${row.P} • GD ${row.GD}</span></div><div class="topscorer-goals">${row.GF}<span>goals</span></div></div>`).join('')}</div></div>` : '<div class="card"><p class="small">No top scoring data yet.</p></div>'}</div></section><section class="section"><div class="wrap"><div class="title"><h2>Latest Results</h2><a href="results.html">View all</a></div><div class="card">${completed.map((m) => matchCard(m)).join('') || '<p class="small">No results yet.</p>'}</div></div></section>`;
 }
 
 function renderFixtures() {
   applyResultDeadlineDefaults();
   init('fixtures');
-  const ms = data().matches.filter((m) => m.homeScore === '' || m.awayScore === '' || m.autoEliminated).filter((m) => !m.autoBye);
+  const { matches, settings } = data();
+  const ms = matches.filter((m) => m.homeScore === '' || m.awayScore === '' || m.autoEliminated).filter((m) => !m.autoBye);
   const groups = [...new Set(ms.map((m) => m.group || m.round || 'Other'))]
     .sort((a, b) => (GROUPS.indexOf(a) === -1 ? 99 : GROUPS.indexOf(a)) - (GROUPS.indexOf(b) === -1 ? 99 : GROUPS.indexOf(b)) || a.localeCompare(b));
 
   const groupedHtml = groups.map((g) => {
     const groupMatches = ms.filter((m) => (m.group || m.round || 'Other') === g);
     const title = GROUPS.includes(g) ? `Group ${escapeHtml(g)}` : escapeHtml(g);
-    return `<h3 class="group-title">${title}</h3><div class="card">${groupMatches.map((m) => knockoutDisplayMatchCard(m)).join('')}</div>`;
+    return `<h3 class="group-title">${title}</h3><div class="card">${groupMatches.map((m) => knockoutDisplayMatchCard(m, true, settings)).join('')}</div>`;
   }).join('');
 
   $('#app').innerHTML = `<section class="section"><div class="wrap"><div class="title"><h2>Fixtures</h2></div>${groupedHtml || '<div class="card">No upcoming fixtures.</div>'}</div></section>`;
@@ -1329,11 +1433,17 @@ function buildKnockoutRound(teams, round) {
   const pairs = pairKnockoutTeams(teams);
   const stamp = Date.now();
   const ms = [];
+  const singleLeg = round === 'Final';
 
   pairs.forEach(([home, away], i) => {
     const tieId = `${round.replace(/\s+/g, '-')}-${stamp}-${i}`;
     if (!away || away === 'BYE') {
-      ms.push({ id: stamp + i * 10 + 1, tieId, tieHome: home, tieAway: 'BYE', leg: 1, round, group: round, home, away: 'BYE', homeScore: '1', awayScore: '0', autoBye: true, date: '', time: '' });
+      ms.push({ id: stamp + i * 10 + 1, tieId, tieHome: home, tieAway: 'BYE', ...(singleLeg ? {} : { leg: 1 }), round, group: round, home, away: 'BYE', homeScore: '1', awayScore: '0', autoBye: true, singleLeg, date: '', time: '' });
+      return;
+    }
+
+    if (singleLeg) {
+      ms.push({ id: stamp + i * 10 + 1, tieId, tieHome: home, tieAway: away, round, group: round, home, away, homeScore: '', awayScore: '', singleLeg: true, date: '', time: '' });
       return;
     }
 
@@ -1396,14 +1506,18 @@ function knockoutWinner(match) {
 
 function knockoutTieStatusHtml(tie) {
   const agg = aggregateForTie(tie.legs);
+  const singleLeg = tie.round === 'Final' || tie.legs.length === 1 || tie.legs.some((m) => m.singleLeg);
+  const scoreLabel = singleLeg ? 'Final score' : 'Aggregate';
+  const drawLabel = singleLeg ? 'Final draw' : 'Aggregate draw';
+
   if (agg.eliminated) return '<span class="tag elim-tag">Both eliminated</span>';
-  if (agg.winner) return `<span class="tag">Winner: ${escapeHtml(agg.winner)}</span><br><span class="small">Aggregate ${agg.aGoals}-${agg.bGoals}</span>`;
-  if (agg.complete && agg.aGoals === agg.bGoals) return `<span class="tag draw-tag">Aggregate draw</span><br><span class="small">Admin must decide winner manually by score.</span>`;
+  if (agg.winner) return `<span class="tag">Winner: ${escapeHtml(agg.winner)}</span><br><span class="small">${scoreLabel} ${agg.aGoals}-${agg.bGoals}</span>`;
+  if (agg.complete && agg.aGoals === agg.bGoals) return `<span class="tag draw-tag">${drawLabel}</span><br><span class="small">Admin must enter a deciding final score.</span>`;
   return '<span class="small">Pending</span>';
 }
 
-function knockoutDisplayMatchCard(m) {
-  return matchCard(m);
+function knockoutDisplayMatchCard(m, showDeadline = false, settings = null) {
+  return matchCard(m, false, showDeadline, settings || data().settings);
 }
 
 function knockoutInputValue(match, side) {
@@ -1424,7 +1538,7 @@ function renderBracket() {
     return `<h3 class="group-title">${escapeHtml(round)}</h3><div class="bracket-tie-grid">${ties.map((tie) => `<div class="card bracket-tie"><div class="tie-head"><b>${escapeHtml(tie.tieHome)}</b><span>vs</span><b>${escapeHtml(tie.tieAway)}</b></div>${tie.legs.map((m) => matchCard(m)).join('')}<div class="tie-status">${knockoutTieStatusHtml(tie)}</div></div>`).join('')}</div>`;
   }).join('');
 
-  $('#app').innerHTML = `<section class="section"><div class="wrap"><h2>Knockout Bracket</h2><p class="small">Knockout rounds use 2 Leg aggregate system. If a knockout tie has missing result after its deadline, both teams are eliminated.</p>${bracketHtml || `<div class="card"><h3>Qualified / League Phase Teams</h3>${q.map((t) => `<div class="slot">${escapeHtml(t)}</div>`).join('') || '<p class="small">No qualified teams yet.</p>'}<p class="small">No knockout fixtures generated yet.</p></div>`}</div></section>`;
+  $('#app').innerHTML = `<section class="section"><div class="wrap"><h2>Knockout Bracket</h2><p class="small">Knockout rounds use 2-leg aggregate scoring through the Semi Finals. The Final is one match only. If a knockout tie has a missing result after its deadline, both teams are eliminated.</p>${bracketHtml || `<div class="card"><h3>Qualified / League Phase Teams</h3>${q.map((t) => `<div class="slot">${escapeHtml(t)}</div>`).join('') || '<p class="small">No qualified teams yet.</p>'}<p class="small">No knockout fixtures generated yet.</p></div>`}</div></section>`;
 }
 
 function buildUclLeaguePhaseFixtures(teams, settings) {
@@ -1467,7 +1581,7 @@ function buildGroupFixtures(teams, settings) {
 }
 
 function adminDash() {
-  return `<section class="section"><div class="wrap admin-layout"><div class="side panel"><button data-tab="settings" class="active">Tournament Settings</button><button data-tab="teams">Teams</button><button data-tab="fixtures">Fixtures</button><button data-tab="results">League Results</button><button data-tab="knockout">Knockout 2 Leg</button><button onclick="sessionStorage.removeItem('efl_admin');location.reload()">Logout</button></div><div class="panel"><div id="adminContent"></div></div></div></section>`;
+  return `<section class="section"><div class="wrap admin-layout"><div class="side panel"><button data-tab="settings" class="active">Tournament Settings</button><button data-tab="teams">Teams</button><button data-tab="fixtures">Fixtures</button><button data-tab="results">League Results</button><button data-tab="knockout">Knockout</button><button onclick="sessionStorage.removeItem('efl_admin');location.reload()">Logout</button></div><div class="panel"><div id="adminContent"></div></div></div></section>`;
 }
 
 function showAdminTab(tab) {
@@ -1497,7 +1611,7 @@ function showAdminTab(tab) {
       const rows = matches.filter((m) => (m.group || m.round || 'Other') === g).map((m) => `<tr><td>${escapeHtml(m.round)}${m.leg ? ` • Leg ${m.leg}` : ''}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input id="date_${m.id}" type="date" value="${escapeHtml((m.date && m.date !== 'TBA') ? m.date : '')}"></td><td><input id="time_${m.id}" type="time" value="${escapeHtml((m.time && m.time !== 'TBA') ? m.time : '')}"></td></tr>`).join('');
       return `<h3 class="group-title">${title}</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Date</th><th>Time</th></tr>${rows}</table></div>`;
     }).join('');
-    c.innerHTML = `<h2>Fixtures + Optional Schedule</h2><div id="adminMessage"></div><div class="admin-actions"><button class="btn" onclick="generateFixtures()">${isUclNewFormat(settings) ? 'Generate UCL League Phase Fixtures' : 'Generate Group Fixtures'}</button><button class="btn alt" onclick="clearFixtureSchedule()">Clear Date/Time Only</button><button class="btn danger" onclick="clearFixtures()">Clear Fixtures</button></div><p class="small">UCL league phase uses ${settings.leaguePhaseMatchesPerTeam || 4} match(es) per team. Knockout uses 2 Leg aggregate score.</p><div class="tool-card"><h3>Quick schedule apply</h3><div class="form compact"><input id="bulkFixtureDate" type="date"><input id="bulkFixtureTime" type="time"><button class="btn" onclick="applyBulkFixtureSchedule()">Apply to All Fixtures</button></div></div><br>${fixtureTables || '<div class="card">No fixtures yet. Generate fixtures first.</div>'}<div class="admin-actions"><button class="btn" onclick="saveFixtureSchedule()">Save Fixture Date/Time</button></div>`;
+    c.innerHTML = `<h2>Fixtures + Optional Schedule</h2><div id="adminMessage"></div><div class="admin-actions"><button class="btn" onclick="generateFixtures()">${isUclNewFormat(settings) ? 'Generate UCL League Phase Fixtures' : 'Generate Group Fixtures'}</button><button class="btn alt" onclick="clearFixtureSchedule()">Clear Date/Time Only</button><button class="btn danger" onclick="clearFixtures()">Clear Fixtures</button></div><p class="small">UCL league phase uses ${settings.leaguePhaseMatchesPerTeam || 4} match(es) per team. Knockout uses 2 legs through the Semi Finals; the Final uses 1 leg.</p><div class="tool-card"><h3>Quick schedule apply</h3><div class="form compact"><input id="bulkFixtureDate" type="date"><input id="bulkFixtureTime" type="time"><button class="btn" onclick="applyBulkFixtureSchedule()">Apply to All Fixtures</button></div></div><br>${fixtureTables || '<div class="card">No fixtures yet. Generate fixtures first.</div>'}<div class="admin-actions"><button class="btn" onclick="saveFixtureSchedule()">Save Fixture Date/Time</button></div>`;
   }
 
   if (tab === 'results') {
@@ -1519,7 +1633,7 @@ function showAdminTab(tab) {
     const scheduleRows = kos.map((m) => `<tr><td>${escapeHtml(m.round)}${m.leg ? ` • Leg ${m.leg}` : ''}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input id="koDate_${m.id}" type="date" value="${escapeHtml((m.date && m.date !== 'TBA') ? m.date : '')}"></td><td><input id="koTime_${m.id}" type="time" value="${escapeHtml((m.time && m.time !== 'TBA') ? m.time : '')}"></td></tr>`).join('');
     const ties = groupKnockoutTies(kos);
     const resultRows = ties.map((tie) => tie.legs.map((m) => `<tr><td>${escapeHtml(m.round)}${m.leg ? `<br><span class="small">Leg ${m.leg}</span>` : ''}</td><td><b>${escapeHtml(m.home)}</b><br><span class="small">vs ${escapeHtml(m.away)}</span></td><td><input class="score-input" id="koHs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(knockoutInputValue(m, 'home'))}" ${m.autoEliminated || m.autoBye ? 'disabled' : ''}></td><td><input class="score-input" id="koAs_${m.id}" type="number" min="0" inputmode="numeric" value="${escapeHtml(knockoutInputValue(m, 'away'))}" ${m.autoEliminated || m.autoBye ? 'disabled' : ''}></td><td>${knockoutTieStatusHtml(tie)}</td></tr>`).join('')).join('');
-    c.innerHTML = `<h2>Knockout 2 Leg</h2><div id="adminMessage"></div><div class="tool-card"><h3>UCL knockout format</h3><p class="small">${escapeHtml(qText)}</p><p class="small"><b>2 Leg:</b> every knockout tie has Leg 1 and Leg 2. Aggregate score decides the winner.</p><p class="small"><b>Deadline rule:</b> missing knockout results are not changed on public page load. Admin can click Apply Due Rules Now after the deadline; then unresolved ties are eliminated and remaining teams can receive BYE advancement if needed.</p><div class="admin-actions"><button class="btn" onclick="generateFirstKnockoutRound()">Generate UCL Playoff</button><button class="btn alt" onclick="generateNextKnockoutRound()">Generate Next Round</button><button class="btn danger" onclick="clearKnockoutFixtures()">Clear Knockout Fixtures</button></div></div><br><div class="tool-card"><h3>Knockout deadlines</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Deadline Date</th><th>Deadline Time</th></tr>${deadlineRows}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutDeadlines()">Save Knockout Deadlines</button><button class="btn alt" onclick="applyDeadlineDrawsNow()">Apply Due Rules Now</button><button class="btn alt" onclick="undoAutoZeroDraws()">Undo Auto 0-0</button></div></div><br><div class="tool-card"><h3>Knockout date/time</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Date</th><th>Time</th></tr>${scheduleRows || '<tr><td colspan="4">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutSchedule()">Save Knockout Date/Time</button></div></div><br><div class="tool-card"><h3>Knockout results</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Home</th><th>Away</th><th>Tie Status</th></tr>${resultRows || '<tr><td colspan="5">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutResults()">Save Knockout Results</button></div></div>`;
+    c.innerHTML = `<h2>Knockout Fixtures</h2><div id="adminMessage"></div><div class="tool-card"><h3>UCL knockout format</h3><p class="small">${escapeHtml(qText)}</p><p class="small"><b>Format:</b> knockout ties use Leg 1 and Leg 2 through the Semi Finals. The Final is a single match.</p><p class="small"><b>Deadline rule:</b> missing knockout results are not changed on public page load. Admin can click Apply Due Rules Now after the deadline; then unresolved ties are eliminated and remaining teams can receive BYE advancement if needed.</p><div class="admin-actions"><button class="btn" onclick="generateFirstKnockoutRound()">Generate UCL Playoff</button><button class="btn alt" onclick="generateNextKnockoutRound()">Generate Next Round</button><button class="btn danger" onclick="clearKnockoutFixtures()">Clear Knockout Fixtures</button></div></div><br><div class="tool-card"><h3>Knockout deadlines</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Deadline Date</th><th>Deadline Time</th></tr>${deadlineRows}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutDeadlines()">Save Knockout Deadlines</button><button class="btn alt" onclick="applyDeadlineDrawsNow()">Apply Due Rules Now</button><button class="btn alt" onclick="undoAutoZeroDraws()">Undo Auto 0-0</button></div></div><br><div class="tool-card"><h3>Knockout date/time</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Date</th><th>Time</th></tr>${scheduleRows || '<tr><td colspan="4">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutSchedule()">Save Knockout Date/Time</button></div></div><br><div class="tool-card"><h3>Knockout results</h3><div class="table-scroll"><table class="table"><tr><th>Round</th><th>Match</th><th>Home</th><th>Away</th><th>Tie Status</th></tr>${resultRows || '<tr><td colspan="5">No knockout fixtures yet.</td></tr>'}</table></div><div class="admin-actions"><button class="btn" onclick="saveKnockoutResults()">Save Knockout Results</button></div></div>`;
   }
 }
 
@@ -1704,7 +1818,7 @@ window.generateNextKnockoutRound = () => {
   const nextMatches = buildKnockoutRound(nextTeams, nextRound);
   setData({ matches: [...keepRounds, ...nextMatches] });
   showAdminTab('knockout');
-  adminMessage(`${nextRound} generated${eliminated.length ? ` (${eliminated.length} eliminated tie(s) skipped)` : ''}.`, 'ok');
+  adminMessage(`${nextRound} generated${nextRound === 'Final' ? ' as a single-leg match' : ''}${eliminated.length ? ` (${eliminated.length} eliminated tie(s) skipped)` : ''}.`, 'ok');
 };
 
 window.saveKnockoutDeadlines = () => {
@@ -1813,7 +1927,7 @@ function renderHome() {
   const upcoming = matches.filter((m) => m.homeScore === '' || m.awayScore === '').slice(0, 4);
   const completed = matches.filter(hasNumericScore).slice(-5).reverse();
 
-  $('#app').innerHTML = `<section class="hero"><div class="wrap hero-grid"><div class="panel"><h1>${escapeHtml(tournamentName(settings))}</h1><a class="btn" href="fixtures.html">View Fixtures</a> <a class="btn alt" href="standings.html">View Standings</a><div class="stats"><div class="stat"><b>${teams.length}</b><br><span>Teams</span></div><div class="stat"><b>${settings.leaguePhaseMatchesPerTeam || 4}</b><br><span>League Matches / Team</span></div><div class="stat"><b>2 Leg</b><br><span>Knockout System</span></div></div></div><div class="panel"><h2>Upcoming Fixtures</h2>${upcoming.map((m) => matchCard(m)).join('') || '<p class="small">No upcoming fixtures yet.</p>'}</div></div></section><section class="section"><div class="wrap"><div class="title"><h2>Top Scoring Team</h2><a href="topscorers.html">View full list</a></div>${leader ? `<div class="topscorer-showcase"><div class="leader-card"><div class="leader-logo-wrap">${teamLogoHtml(leader.team, 'leader-logo')}</div><div class="leader-label">Leading team</div><h3>${escapeHtml(leader.team)}</h3><div class="leader-goals">${leader.GF}</div><p class="small">Goals scored</p></div><div class="card topscorer-side-list">${scoring.slice(0, 5).map((row) => `<div class="topscorer-item ${row.rank === 1 ? 'is-leading' : ''}"><div class="topscorer-rank">#${row.rank}</div><div class="topscorer-team with-logo">${teamNameLogoHtml(row.team)}<span class="small">P ${row.P} • GD ${row.GD}</span></div><div class="topscorer-goals">${row.GF}<span>goals</span></div></div>`).join('')}</div></div>` : '<div class="card"><p class="small">No top scoring data yet.</p></div>'}</div></section><section class="section"><div class="wrap"><div class="title"><h2>Latest Results</h2><a href="results.html">View all</a></div><div class="card">${completed.map((m) => matchCard(m)).join('') || '<p class="small">No results yet.</p>'}</div></div></section>`;
+  $('#app').innerHTML = `<section class="hero"><div class="wrap hero-grid"><div class="panel"><h1>${escapeHtml(tournamentName(settings))}</h1><a class="btn" href="fixtures.html">View Fixtures</a> <a class="btn alt" href="standings.html">View Standings</a><div class="stats"><div class="stat"><b>${teams.length}</b><br><span>Teams</span></div><div class="stat"><b>${settings.leaguePhaseMatchesPerTeam || 4}</b><br><span>League Matches / Team</span></div><div class="stat"><b>2 → 1 Leg</b><br><span>Knockout / Final</span></div></div></div><div class="panel"><h2>Upcoming Fixtures</h2>${upcoming.map((m) => matchCard(m)).join('') || '<p class="small">No upcoming fixtures yet.</p>'}</div></div></section><section class="section"><div class="wrap"><div class="title"><h2>Top Scoring Team</h2><a href="topscorers.html">View full list</a></div>${leader ? `<div class="topscorer-showcase"><div class="leader-card"><div class="leader-logo-wrap">${teamLogoHtml(leader.team, 'leader-logo')}</div><div class="leader-label">Leading team</div><h3>${escapeHtml(leader.team)}</h3><div class="leader-goals">${leader.GF}</div><p class="small">Goals scored</p></div><div class="card topscorer-side-list">${scoring.slice(0, 5).map((row) => `<div class="topscorer-item ${row.rank === 1 ? 'is-leading' : ''}"><div class="topscorer-rank">#${row.rank}</div><div class="topscorer-team with-logo">${teamNameLogoHtml(row.team)}<span class="small">P ${row.P} • GD ${row.GD}</span></div><div class="topscorer-goals">${row.GF}<span>goals</span></div></div>`).join('')}</div></div>` : '<div class="card"><p class="small">No top scoring data yet.</p></div>'}</div></section><section class="section"><div class="wrap"><div class="title"><h2>Latest Results</h2><a href="results.html">View all</a></div><div class="card">${completed.map((m) => matchCard(m)).join('') || '<p class="small">No results yet.</p>'}</div></div></section>`;
 }
 
 function renderTeams() {
