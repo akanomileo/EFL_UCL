@@ -86,7 +86,7 @@ supabase-setup.sql
 
 1. Open your live website.
 2. Open `admin.html`.
-3. Login with PIN `1234`.
+3. On first setup, create your own private admin PIN.
 4. Add one team.
 5. Go to Supabase → Table Editor → `efl_data`.
 6. Check if the `teams` row changed.
